@@ -3468,6 +3468,16 @@ Warning	1292	Incorrect datetime value: '2024-00-00 00:00:00'
 Warning	1292	Incorrect datetime value: '2024-00-01 00:00:00'
 Warning	1292	Incorrect datetime value: '2024-12-00 00:00:00'
 drop table if exists t;
+SELECT GET_FORMAT(DATE, 'FOO'),GET_FORMAT(DATETIME, 'FOO'),GET_FORMAT(TIMESTAMP, 'FOO'),GET_FORMAT(TIME, 'FOO');
+GET_FORMAT(DATE, 'FOO')	GET_FORMAT(DATETIME, 'FOO')	GET_FORMAT(TIMESTAMP, 'FOO')	GET_FORMAT(TIME, 'FOO')
+NULL	NULL	NULL	NULL
+drop table if exists t;
+create table t(loc_str varchar(20));
+insert into t values ('FOO');
+SELECT GET_FORMAT(DATE, loc_str),GET_FORMAT(DATETIME, loc_str),GET_FORMAT(TIMESTAMP, loc_str),GET_FORMAT(TIME, loc_str) FROM t;
+GET_FORMAT(DATE, loc_str)	GET_FORMAT(DATETIME, loc_str)	GET_FORMAT(TIMESTAMP, loc_str)	GET_FORMAT(TIME, loc_str)
+NULL	NULL	NULL	NULL
+drop table if exists t;
 SELECT GET_FORMAT(TIME, 'usa'), GET_FORMAT(TIME, 'USA'), GET_FORMAT(TIME, 'UsA'), GET_FORMAT(time, 'UsA'), GET_FORMAT(TIme, 'UsA');
 GET_FORMAT(TIME, 'usa')	GET_FORMAT(TIME, 'USA')	GET_FORMAT(TIME, 'UsA')	GET_FORMAT(time, 'UsA')	GET_FORMAT(TIme, 'UsA')
 %h:%i:%s %p	%h:%i:%s %p	%h:%i:%s %p	%h:%i:%s %p	%h:%i:%s %p

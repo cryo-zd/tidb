@@ -1669,6 +1669,14 @@ SELECT DATE(test_date) FROM t;
 show warnings;
 drop table if exists t;
 
+# Issue 59419
+SELECT GET_FORMAT(DATE, 'FOO'),GET_FORMAT(DATETIME, 'FOO'),GET_FORMAT(TIMESTAMP, 'FOO'),GET_FORMAT(TIME, 'FOO');
+drop table if exists t;
+create table t(loc_str varchar(20));
+insert into t values ('FOO');
+SELECT GET_FORMAT(DATE, loc_str),GET_FORMAT(DATETIME, loc_str),GET_FORMAT(TIMESTAMP, loc_str),GET_FORMAT(TIME, loc_str) FROM t;
+drop table if exists t;
+
 # Issue 59420
 SELECT GET_FORMAT(TIME, 'usa'), GET_FORMAT(TIME, 'USA'), GET_FORMAT(TIME, 'UsA'), GET_FORMAT(time, 'UsA'), GET_FORMAT(TIme, 'UsA');
 SELECT GET_FORMAT(DATE, 'jis'),GET_FORMAT(DATETIME, 'iso'),GET_FORMAT(TIMESTAMP, 'eur'),GET_FORMAT(TIME, 'internal');

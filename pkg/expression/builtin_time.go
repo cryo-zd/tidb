@@ -1968,7 +1968,8 @@ func (b *builtinGetFormatSig) evalString(ctx EvalContext, row chunk.Row) (string
 	}
 
 	res := b.getFormat(t, l)
-	return res, false, nil
+	// res will be "" when location is unknown, and we should return NULL in this case #59419
+	return res, res == "", nil
 }
 
 type strToDateFunctionClass struct {

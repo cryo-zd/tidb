@@ -612,7 +612,13 @@ func (b *builtinGetFormatSig) vecEvalString(ctx EvalContext, input *chunk.Chunk,
 		format := buf0.GetString(i)
 		location := buf1.GetString(i)
 		res := b.getFormat(format, location)
-		result.AppendString(res)
+
+		// res will be "" when location is unknown, and we should return NULL in this case #59419
+		if res == "" {
+			result.AppendNull()
+		} else {
+			result.AppendString(res)
+		}
 	}
 	return nil
 }
