@@ -24,14 +24,13 @@ import (
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"github.com/pingcap/tidb/tests/llmtest/logger"
-	"github.com/pingcap/tidb/tests/llmtest/testcase"
 	"go.uber.org/zap"
 )
 
-// TestCaseGenerator generates test cases and write the test cases to the `caseManager` to reach a specific count.
-type TestCaseGenerator struct {
+// Generator generates items and writes them to the store to reach a specific count.
+type Generator[T any] struct {
 	inputCh     chan string
-	caseManager *testcase.Manager
+	store       Store[T]
 	parallelism int
 
 	wg *sync.WaitGroup
@@ -40,22 +39,27 @@ type TestCaseGenerator struct {
 	openAIBaseURL string
 	modelName     string
 
-	promptGenerator PromptGenerator
+	promptGenerator PromptGenerator[T]
 	testCaseCount   int
 }
 
-// New creates a new TestCaseGenerator.
-func New(
-	caseManager *testcase.Manager,
+// New creates a new Generator.
+func New[T any](
+	store Store[T],
 	parallelism int,
 	openAIToken string,
 	openAIBaseURL string,
 	modelName string,
-	promptGenerator PromptGenerator,
-	testCaseCount int) *TestCaseGenerator {
-	return &TestCaseGenerator{
+	promptGenerator PromptGenerator[T],
+	testCaseCount int) *Generator[T] {
+	if promptGenerator.Kind() == GeneratorKindBugSeed && testCaseCount != 1 {
+		logger.Global.Info("Force the testCaseCount to 1 for BugSeed generator")
+		testCaseCount = 1 // For bug seed, only generate 1 case per group.
+	}
+
+	return &Generator[T]{
 		inputCh:     make(chan string, len(promptGenerator.Groups())),
-		caseManager: caseManager,
+		store:       store,
 		parallelism: parallelism,
 
 		wg: new(sync.WaitGroup),
@@ -70,7 +74,7 @@ func New(
 }
 
 // Run starts the generator.
-func (g *TestCaseGenerator) Run() {
+func (g *Generator[T]) Run() {
 	for range g.parallelism {
 		g.wg.Add(1)
 		go g.runWorker()
@@ -82,8 +86,8 @@ func (g *TestCaseGenerator) Run() {
 	close(g.inputCh)
 }
 
-func (g *TestCaseGenerator) generateTestSQLsForFunction(client *openai.Client, group string) ([]testcase.Case, error) {
-	existCases := g.caseManager.ExistCases(group)
+func (g *Generator[T]) generateItemsForGroup(client *openai.Client, group string) ([]T, error) {
+	existCases := g.store.Exist(group)
 	if len(existCases) >= g.testCaseCount {
 		return nil, nil
 	}
@@ -121,18 +125,18 @@ func (g *TestCaseGenerator) generateTestSQLsForFunction(client *openai.Client, g
 		return nil, err
 	}
 
-	logger.Global.Debug("chat completions raw response", zap.String("raw completion", completion.JSON.RawJSON()))
+	// logger.Global.Debug("chat completions raw response", zap.String("raw completion", completion.JSON.RawJSON()))
 	if len(completion.Choices) == 0 {
 		return nil, fmt.Errorf("no completion choices")
 	}
 
 	cases := g.promptGenerator.Unmarshal(completion.Choices[0].Message.Content)
 
-	logger.Global.Info("generated cases", zap.Any("queries", cases))
+	// logger.Global.Info("generated cases", zap.Any("queries", cases))
 	return cases, nil
 }
 
-func (g *TestCaseGenerator) runWorker() {
+func (g *Generator[T]) runWorker() {
 	defer g.wg.Done()
 
 	client := openai.NewClient(
@@ -144,19 +148,19 @@ func (g *TestCaseGenerator) runWorker() {
 	)
 
 	for input := range g.inputCh {
-		cases, err := g.generateTestSQLsForFunction(client, input)
+		cases, err := g.generateItemsForGroup(client, input)
 		if err != nil {
 			logger.Global.Error("failed to generate test SQLs", zap.Error(err))
 			continue
 		}
 
 		for _, c := range cases {
-			g.caseManager.AppendCase(input, c)
+			g.store.Append(input, c)
 		}
 	}
 }
 
 // Wait waits for all workers to finish.
-func (g *TestCaseGenerator) Wait() {
+func (g *Generator[T]) Wait() {
 	g.wg.Wait()
 }

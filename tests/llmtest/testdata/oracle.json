@@ -1,0 +1,487 @@
+{
+  "mysql-105762": {
+    "summary": {
+      "root_cause_groups": [
+        {
+          "group_id": "g1",
+          "case_ids": [
+            "mysql-105762:repro_double_least",
+            "mysql-105762:mutate_int_groupby"
+          ],
+          "relationship": "same_root_cause"
+        }
+      ],
+      "canonical_case_id": "mysql-105762:repro_double_least",
+      "minimization_hint": "N/A as no bug is found.",
+      "notes": "Both cases verify the correct handling of NULL values within the LEAST function when aggregated by SUM."
+    },
+    "cases": [
+      {
+        "case_id": "mysql-105762:repro_double_least",
+        "verdict": "ok",
+        "reason": "The TiDB result is 1, which matches the expected behavior. LEAST(1, NULL) returns NULL and is ignored by SUM; LEAST(1, 1) returns 1."
+      },
+      {
+        "case_id": "mysql-105762:mutate_int_groupby",
+        "verdict": "ok",
+        "reason": "The TiDB result is (10, 7), which matches the expected behavior. Row 1 yields NULL (ignored), Row 2 yields 7."
+      }
+    ]
+  },
+  "mysql-105773": {
+    "summary": {
+      "root_cause_groups": [
+        {
+          "group_id": "g1",
+          "case_ids": [
+            "mysql-105773:repro_scalar_const",
+            "mysql-105773:mutate_optimization_where"
+          ],
+          "relationship": "same_root_cause"
+        }
+      ],
+      "canonical_case_id": "mysql-105773:repro_scalar_const",
+      "minimization_hint": "The scalar constant case is already minimal. The WHERE clause case demonstrates the same issue in a filtering context.",
+      "notes": "The first case returns the correct result (0). The second case lacks sufficient result data to verify correctness."
+    },
+    "cases": [
+      {
+        "case_id": "mysql-105773:repro_scalar_const",
+        "verdict": "ok",
+        "reason": "The query returns 0, which is correct. (0 \u003c=\u003e NULL) evaluates to 0, and NULL \u003c=\u003e 0 evaluates to 0, so the final result is 0. This matches the expected behavior."
+      },
+      {
+        "case_id": "mysql-105773:mutate_optimization_where",
+        "verdict": "uncertain",
+        "reason": "The TiDB result output shows the trigger SQL but does not include the actual result rows or error information. Cannot determine if TiDB correctly returns 0 rows (empty set) as expected."
+      }
+    ]
+  },
+  "mysql-106241": {
+    "summary": {
+      "root_cause_groups": [
+        {
+          "group_id": "g1",
+          "case_ids": [
+            "mysql-106241:repro_bit32_max",
+            "mysql-106241:mutate_bit1_boundary",
+            "mysql-106241:mutate_bit64_min"
+          ],
+          "relationship": "same_root_cause"
+        }
+      ],
+      "canonical_case_id": "mysql-106241:repro_bit32_max",
+      "minimization_hint": "The original case can be simplified to: CREATE TABLE t(data BIT(32)); INSERT INTO t(data) VALUES(1); SELECT MAX(data) FROM t;",
+      "notes": "All cases pass - TiDB correctly handles BIT column aggregation with proper wire protocol serialization. The results show correct binary string representations of the BIT values."
+    },
+    "cases": [
+      {
+        "case_id": "mysql-106241:repro_bit32_max",
+        "verdict": "ok",
+        "reason": "The TiDB result returns '\\u0000\\u0000\\u0000\\u0001' which represents the BIT(32) value 1 (binary: 00000000 00000000 00000000 00000001). This matches the expected behavior of returning the value 1, not 0."
+      },
+      {
+        "case_id": "mysql-106241:mutate_bit1_boundary",
+        "verdict": "ok",
+        "reason": "The TiDB result returns '\\u0001' which represents the BIT(1) value 1. This matches the expected behavior of correctly returning the value 1."
+      },
+      {
+        "case_id": "mysql-106241:mutate_bit64_min",
+        "verdict": "ok",
+        "reason": "The TiDB result returns '\\u0000\\u0000\\u0000\\u0000\\u0000\\u0000\\u0000\\u0001' which represents the BIT(64) value 1. This is the correct MIN value from the set {1, 2} and matches the expected behavior."
+      }
+    ]
+  },
+  "mysql-106286": {
+    "summary": {
+      "root_cause_groups": [
+        {
+          "group_id": "g1",
+          "case_ids": [
+            "mysql-106286:repro_timestamp_null_safe",
+            "mysql-106286:mutate_datetime_type"
+          ],
+          "relationship": "same_root_cause"
+        }
+      ],
+      "canonical_case_id": "mysql-106286:repro_timestamp_null_safe",
+      "minimization_hint": "TiDB reports a syntax error on the CREATE TRIGGER statement, specifically failing to parse the complex trigger body containing IF EXISTS and SIGNAL SQLSTATE. The setup SQL needs to be compatible with TiDB's trigger syntax to proceed with the logic verification.",
+      "notes": "Both cases failed during the setup phase (CREATE TRIGGER) with a syntax error, so the semantic correctness of the null-safe operator \u003c=\u003e within the trigger context could not be evaluated."
+    },
+    "cases": [
+      {
+        "case_id": "mysql-106286:repro_timestamp_null_safe",
+        "verdict": "uncertain",
+        "reason": "TiDB returns a syntax error during the setup phase (Error 1064) when attempting to create the trigger. Because the trigger creation failed, the execution logic regarding the TIMESTAMP null-safe comparison could not be tested."
+      },
+      {
+        "case_id": "mysql-106286:mutate_datetime_type",
+        "verdict": "uncertain",
+        "reason": "TiDB returns a syntax error during the setup phase (Error 1064) when attempting to create the trigger. The reproduction logic for DATETIME types could not be executed to verify the behavior."
+      }
+    ]
+  },
+  "mysql-106444": {
+    "summary": {
+      "root_cause_groups": [
+        {
+          "group_id": "g1",
+          "case_ids": [
+            "mysql-106444:repro_escape_bool",
+            "mysql-106444:mut_escape_col_int"
+          ],
+          "relationship": "same_root_cause"
+        }
+      ],
+      "canonical_case_id": "mysql-106444:repro_escape_bool",
+      "minimization_hint": "Both cases fail with syntax errors when attempting to use non-string literals or columns in the ESCAPE clause.",
+      "notes": "Both cases resulted in syntax errors, so the verdict is uncertain based on the provided rules."
+    },
+    "cases": [
+      {
+        "case_id": "mysql-106444:repro_escape_bool",
+        "verdict": "uncertain",
+        "reason": "TiDB returned a syntax error (Err 1064) for the query using a boolean literal in the ESCAPE clause. The expected behavior assumes the query executes successfully. Since a syntax error occurred, the execution logic and potential inconsistency cannot be verified.",
+        "report_draft": "Syntax error observed."
+      },
+      {
+        "case_id": "mysql-106444:mut_escape_col_int",
+        "verdict": "uncertain",
+        "reason": "TiDB returned a syntax error (Err 1064) for the query using an integer column in the ESCAPE clause. The expected behavior assumes the query executes and focuses on type casting consistency. The syntax error prevents verification of the runtime behavior.",
+        "report_draft": "Syntax error observed."
+      }
+    ]
+  },
+  "mysql-106621": {
+    "summary": {
+      "notes": "No bugs detected in the provided cases."
+    },
+    "cases": [
+      {
+        "case_id": "mysql-106621:repro_unsigned_array",
+        "verdict": "ok",
+        "reason": "The query returns 200 rows, matching the recursive CTE insertion count exactly. The multivalued index lookup correctly identifies all rows where 1 is a member of the JSON array."
+      },
+      {
+        "case_id": "mysql-106621:mutate_signed_negative",
+        "verdict": "ok",
+        "reason": "TiDB correctly returns all 3 rows where the value -30 is present in the JSON array. The signed array index handling and negative value matching work as expected."
+      }
+    ]
+  },
+  "mysql-108008": {
+    "summary": {
+      "root_cause_groups": [
+        {
+          "group_id": "g1",
+          "case_ids": [
+            "mysql-108008:repro_window_frame_bug",
+            "mysql-108008:mutate_decimal_type"
+          ],
+          "relationship": "same_root_cause"
+        }
+      ],
+      "canonical_case_id": "mysql-108008:mutate_decimal_type",
+      "minimization_hint": "Use CREATE TABLE and INSERT statements instead of VALUES ROW syntax to reproduce the window function logic in TiDB.",
+      "notes": "The first case was inconclusive due to a syntax error with the VALUES clause. The second case confirmed that TiDB implements the correct logic for FIRST_VALUE with the specified window frame, unlike the MySQL bug described in the context."
+    },
+    "cases": [
+      {
+        "case_id": "mysql-108008:repro_window_frame_bug",
+        "verdict": "uncertain[SKip, left to be done]",
+        "reason": "TiDB encountered a syntax error (Error 1064) when executing the query using the `VALUES ROW(...)` syntax. This syntax appears to be unsupported or incorrectly formed for this version of TiDB, preventing execution and verification of the window function logic."
+      },
+      {
+        "case_id": "mysql-108008:mutate_decimal_type",
+        "verdict": "ok",
+        "reason": "For the row where `value=20.5`, the window frame `ROWS BETWEEN 1 PRECEDING AND 2 FOLLOWING` over the ordered set {10.5, 20.5, 30.5, 40.5, 50.5} results in the frame {10.5, 20.5, 30.5, 40.5}. The expected behavior states `FIRST_VALUE` should return 10.5. TiDB returned 10.5, which matches the expected result. TiDB correctly handles the window frame calculation in this scenario."
+      }
+    ]
+  },
+  "mysql-108202": {
+    "summary": {
+      "root_cause_groups": [
+        {
+          "group_id": "g1",
+          "case_ids": [
+            "mysql-108202:direct_repro_views",
+            "mysql-108202:mutate_tables_source"
+          ],
+          "relationship": "same_root_cause"
+        }
+      ],
+      "canonical_case_id": "mysql-108202:direct_repro_views",
+      "minimization_hint": "The cases are already minimal reproducers of the specific scenario described in the original bug report.",
+      "notes": "The original MySQL bug (108202) involves an internal privilege assertion error (ER_ACCESS_DENIED_ERROR) when querying Information Schema through a TEMPTABLE view. TiDB does not exhibit this error in the provided results."
+    },
+    "cases": [
+      {
+        "case_id": "mysql-108202:direct_repro_views",
+        "verdict": "ok",
+        "reason": "The expected behavior is to return results without ERROR 3566. The TiDB result shows successful execution with no errors reported. Therefore, TiDB behaves correctly and does not exhibit the MySQL bug.",
+        "report_draft": "TiDB correctly handles ALGORITHM=TEMPTABLE views querying information_schema.VIEWS without throwing privilege errors."
+      },
+      {
+        "case_id": "mysql-108202:mutate_tables_source",
+        "verdict": "ok",
+        "reason": "The expected behavior is to return rows without access privilege errors. The TiDB result indicates successful execution. Thus, TiDB does not reproduce the access violation error associated with the MySQL bug.",
+        "report_draft": "TiDB correctly handles ALGORITHM=TEMPTABLE views querying information_schema.TABLES without throwing privilege errors."
+      }
+    ]
+  },
+  "mysql-112557": {
+    "summary": {
+      "root_cause_groups": [
+        {
+          "group_id": "g1",
+          "case_ids": [
+            "mysql-112557:repro_original_logic"
+          ],
+          "relationship": "same_root_cause"
+        }
+      ],
+      "canonical_case_id": "mysql-112557:repro_original_logic",
+      "notes": "One case passed, one case had a syntax/execution error and could not be evaluated."
+    },
+    "cases": [
+      {
+        "case_id": "mysql-112557:repro_original_logic",
+        "verdict": "ok",
+        "reason": "Both queries returned (NULL, NULL) as expected. The expected behavior was that they return the exact same result set (Rows: NULL, NULL), and TiDB's actual result matches this."
+      },
+      {
+        "case_id": "mysql-112557:mutate_rank_function",
+        "verdict": "uncertain[Nice catch by Fuzzing!]",
+        "reason": "TiDB returned an execution error ('Unknown column 't_rank.a' in 'where clause''). According to the rules, if the TiDB result contains an error, mark it as 'uncertain' directly."
+      }
+    ]
+  },
+  "mysql-113097": {
+    "summary": {
+      "root_cause_groups": [
+        {
+          "group_id": "g1",
+          "case_ids": [
+            "mysql-113097:repro_alias_subquery",
+            "mysql-113097:mutate_format_alias"
+          ],
+          "relationship": "same_root_cause"
+        }
+      ],
+      "canonical_case_id": "mysql-113097:repro_alias_subquery",
+      "minimization_hint": "The pattern can be minimized to: SELECT (SELECT alias) alias FROM table - testing whether a SELECT list alias can be referenced in a scalar subquery within the same SELECT list.",
+      "notes": "Both cases fail with error in TiDB but claim MySQL should succeed. The core issue is about alias scoping - whether an alias defined in the SELECT list is visible to scalar subqueries within the same SELECT list expression. Standard SQL would not allow this, but the bug report suggests MySQL has a specific behavior that permits it."
+    },
+    "cases": [
+      {
+        "case_id": "mysql-113097:repro_alias_subquery",
+        "verdict": "uncertain[False positive: standard SQL prohibits it, but MySQL has specific behaviors]",
+        "reason": "TiDB returns error 'Unknown column tz' while the expected behavior claims the query should succeed and return 1 row. The query attempts to reference an alias 'tz' defined in the SELECT list within a scalar subquery '(select tz)' in the same SELECT list. Whether this is allowed is ambiguous - standard SQL prohibits it, but MySQL has specific behaviors. Since TiDB throws an error and expected behavior claims success, this represents a difference that needs investigation into whether MySQL actually allows this pattern.",
+        "report_draft": "Query fails with 'Unknown column tz' when attempting to reference SELECT list alias 'tz' within scalar subquery in same SELECT list."
+      },
+      {
+        "case_id": "mysql-113097:mutate_format_alias",
+        "verdict": "uncertain",
+        "reason": "TiDB returns error 'Unknown column tz' while the expected behavior claims the query should return 1 row. This is a variant of the first case using DATE_FORMAT. It attempts the same pattern - referencing alias 'tz' defined in SELECT list within scalar subquery '(select tz)' in the same SELECT list. TiDB throws an error but expected behavior claims MySQL succeeds.",
+        "report_draft": "Query fails with 'Unknown column tz' when attempting to reference SELECT list alias 'tz' within scalar subquery in same SELECT list (variant with DATE_FORMAT)."
+      }
+    ]
+  },
+  "mysql-113171": {
+    "summary": {
+      "root_cause_groups": [
+        {
+          "group_id": "g1",
+          "case_ids": [
+            "mysql-113171:repro_direct_dual",
+            "mysql-113171:mutate_table_source"
+          ],
+          "relationship": "same_root_cause"
+        }
+      ],
+      "canonical_case_id": "mysql-113171:repro_direct_dual",
+      "minimization_hint": "The simplest reproduction is SELECT SUM(SUBSTRING('text', 1, 3)) FROM dual;",
+      "notes": "The observed behavior (lack of warnings) is consistent across both direct execution and table source execution."
+    },
+    "cases": [
+      {
+        "case_id": "mysql-113171:repro_direct_dual",
+        "verdict": "bug[TODO: runtime behavior, should be omitted]",
+        "reason": "TiDB executed successfully without warnings, but the expected behavior is to generate warnings (Error 1292) because the string result 'tex' is implicitly converted to a number for SUM().",
+        "report_draft": "Implicit conversion warnings are missing when aggregating string results with SUM()."
+      },
+      {
+        "case_id": "mysql-113171:mutate_table_source",
+        "verdict": "bug",
+        "reason": "TiDB executed successfully without warnings, whereas the expected behavior is to generate warnings due to the implicit conversion of the substring 'non-n' to a number in SUM().",
+        "report_draft": "Implicit conversion warnings are missing when aggregating substring results from a table column with SUM()."
+      }
+    ]
+  },
+  "mysql-114404": {
+    "summary": {
+      "root_cause_groups": [
+        {
+          "group_id": "g1",
+          "case_ids": [
+            "mysql-114404:repro_int_cast",
+            "mysql-114404:variant_datetime_type"
+          ],
+          "relationship": "same_root_cause"
+        }
+      ],
+      "canonical_case_id": "mysql-114404:repro_int_cast",
+      "minimization_hint": "Minimization is possible by isolating the CAST expression syntax: `SELECT CAST(1 AT TIME ZONE '+00:00' AS DATETIME)`.",
+      "notes": "Both cases fail due to TiDB's lack of support for the SQL standard AT TIME ZONE syntax in CAST expressions."
+    },
+    "cases": [
+      {
+        "case_id": "mysql-114404:repro_int_cast",
+        "verdict": "uncertain[TODO: usyntax error]",
+        "reason": "TiDB returns a syntax error (Error 1064) for the 'AT TIME ZONE' clause, preventing execution. Per rules, syntax errors result in an uncertain verdict as semantic behavior cannot be verified.",
+        "report_draft": "TiDB fails to parse CAST expression with AT TIME ZONE syntax."
+      },
+      {
+        "case_id": "mysql-114404:variant_datetime_type",
+        "verdict": "uncertain",
+        "reason": "TiDB returns a syntax error (Error 1064) for the 'AT TIME ZONE' clause, preventing execution. Per rules, syntax errors result in an uncertain verdict as semantic behavior cannot be verified.",
+        "report_draft": "TiDB fails to parse CAST expression with AT TIME ZONE syntax."
+      }
+    ]
+  },
+  "mysql-114509": {
+    "summary": {
+      "root_cause_groups": [
+        {
+          "group_id": "g1",
+          "case_ids": [
+            "mysql-114509:repro_direct_if",
+            "mysql-114509:mutate_case_when_edge"
+          ],
+          "relationship": "same_root_cause"
+        }
+      ],
+      "canonical_case_id": "mysql-114509:repro_direct_if",
+      "minimization_hint": "The repro can be minimized to: SELECT IF('316-354', 1, 0);",
+      "notes": "This indicates a discrepancy in implicit casting rules between TiDB and MySQL when evaluating boolean predicates."
+    },
+    "cases": [
+      {
+        "case_id": "mysql-114509:repro_direct_if",
+        "verdict": "bug[TOOD: related to runtime behavior, not critical",
+        "reason": "TiDB raises Error 1292 (Truncated incorrect DOUBLE value) when implicitly converting '316-354' to a number in the IF condition. The expected behavior is to truncate the string at the dash to 316, evaluate as TRUE, and insert 1, consistent with MySQL 8.0.",
+        "report_draft": "TiDB throws a data truncation error during implicit type conversion in boolean contexts (IF condition) for strings with trailing non-numeric characters. MySQL converts '316-354' to 316 and proceeds, while TiDB fails."
+      },
+      {
+        "case_id": "mysql-114509:mutate_case_when_edge",
+        "verdict": "bug",
+        "reason": "TiDB raises Error 1292 when implicitly converting '316-354' to a number in the CASE WHEN condition. The expected behavior is to convert it to 316 (TRUE) and insert 'T', consistent with MySQL's implicit casting rules.",
+        "report_draft": "Implicit conversion in CASE WHEN conditions fails for strings like '316-354', throwing a truncation error. MySQL handles this by truncating to the numeric prefix (316)."
+      }
+    ]
+  },
+  "mysql-115035": {
+    "summary": {
+      "root_cause_groups": [
+        {
+          "group_id": "g1",
+          "case_ids": [
+            "mysql-115035:repro_mysql_115035",
+            "mysql-115035:mutate_agg_func"
+          ],
+          "relationship": "same_root_cause"
+        }
+      ],
+      "canonical_case_id": "mysql-115035:repro_mysql_115035",
+      "minimization_hint": "N/A",
+      "notes": "TiDB behavior is correct for the provided test cases."
+    },
+    "cases": [
+      {
+        "case_id": "mysql-115035:repro_mysql_115035",
+        "verdict": "ok",
+        "reason": "TiDB returns 1 row, matching the expected behavior. Executing the view definition query directly on an empty table produces 1 row with the constant '1'."
+      },
+      {
+        "case_id": "mysql-115035:mutate_agg_func",
+        "verdict": "ok",
+        "reason": "TiDB returns 1 row, consistent with the expected behavior. The result is the same as the direct execution of the view definition."
+      }
+    ]
+  },
+  "mysql-116393": {
+    "summary": {
+      "root_cause_groups": [
+        {
+          "group_id": "g1",
+          "case_ids": [
+            "mysql-116393:repro_benchmark_sha2_md5",
+            "mysql-116393:mutate_long_string_stress"
+          ],
+          "relationship": "variant_failed"
+        }
+      ],
+      "canonical_case_id": "mysql-116393:repro_benchmark_sha2_md5",
+      "minimization_hint": "Reduce the loop count in BENCHMARK and the string length in REPEAT to the smallest values that still reproduce the latency issue.",
+      "notes": "Verdicts are uncertain because the input JSON does not contain execution duration or profiling data, which is required to validate performance-related expected behaviors."
+    },
+    "cases": [
+      {
+        "case_id": "mysql-116393:repro_benchmark_sha2_md5",
+        "verdict": "uncertain[False positive, no need to test due to runtime metrics]",
+        "reason": "The TiDB result only provides the query output (0). The expected behavior concerns execution time and performance degradation (latency), but no timing metrics were included in the result data to verify these constraints."
+      },
+      {
+        "case_id": "mysql-116393:mutate_long_string_stress",
+        "verdict": "uncertain",
+        "reason": "The TiDB result only provides the query output (0). The expected behavior concerns performance scaling (linear vs exponential), but no timing metrics were included in the result data to verify this behavior."
+      }
+    ]
+  },
+  "mysql-116467": {
+    "summary": {
+      "root_cause_groups": [
+        {
+          "group_id": "g1",
+          "case_ids": [
+            "mysql-116467:repro_direct_sequence",
+            "mysql-116467:mutate_unique_key_update"
+          ],
+          "relationship": "same_root_cause"
+        }
+      ],
+      "canonical_case_id": "mysql-116467:repro_direct_sequence",
+      "minimization_hint": "Remove the loop and transaction control statements to isolate the syntax error. For example: CREATE PROCEDURE test_syntax() BEGIN UPDATE sequence SET current_value = current_value + increment WHERE seq_name = 'genid'; END;",
+      "notes": "Both cases encountered a syntax error when attempting to create a stored procedure containing 'START TRANSACTION'. This suggests the TiDB version used may not support this syntax within a procedure body or requires a specific delimiter configuration. Since the procedures failed to create, the actual bug regarding transaction throughput cannot be evaluated."
+    },
+    "cases": [
+      {
+        "case_id": "mysql-116467:repro_direct_sequence",
+        "verdict": "uncertain[Syntax Error]",
+        "reason": "TiDB reported a syntax error (Error 1064) during the creation of the stored procedure, specifically near 'START TRANSACTION'. Because the procedure failed to compile, the intended logic (looping 1000 times in a transaction) could not be executed, making it impossible to verify the performance regression described in the bug report."
+      },
+      {
+        "case_id": "mysql-116467:mutate_unique_key_update",
+        "verdict": "uncertain",
+        "reason": "TiDB reported a syntax error (Error 1064) during the creation of the stored procedure, similar to the first case. The failure prevents the execution of the test logic, so the behavior regarding the secondary unique index update cannot be assessed."
+      }
+    ]
+  },
+  "mysql-118834": {
+    "summary": {
+      "notes": "No bugs detected in the provided scenarios."
+    },
+    "cases": [
+      {
+        "case_id": "mysql-118834:repro_mysql_118834",
+        "verdict": "ok",
+        "reason": "TiDB correctly returns 2 rows for both queries, which aligns with the expected behavior that -(-1.7976931348623157E308) is equivalent to 1.7976931348623157E308."
+      },
+      {
+        "case_id": "mysql-118834:mutate_float_inclusive_boundary",
+        "verdict": "ok",
+        "reason": "TiDB correctly returns 2 rows for both inclusive boundary queries, indicating consistent handling of the float negation logic."
+      }
+    ]
+  }
+}

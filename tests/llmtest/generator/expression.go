@@ -32,6 +32,11 @@ func (g *expressionPromptGenerator) Name() string {
 	return "expression"
 }
 
+// Kind implements PromptGenerator.Kind.
+func (g *expressionPromptGenerator) Kind() GeneratorKind {
+	return GeneratorKindTestcase
+}
+
 // Groups implements PromptGenerator.Groups
 func (g *expressionPromptGenerator) Groups() []string {
 	return []string{
@@ -128,7 +133,7 @@ func (g *expressionPromptGenerator) GeneratePrompt(group string, count int, exis
 }
 
 // Unmarshal implements PromptGenerator.Unmarshal
-func (g *expressionPromptGenerator) Unmarshal(response string) []testcase.Case {
+func (g *expressionPromptGenerator) Unmarshal(response string) []*testcase.Case {
 	var resp simplePromptResponse
 	err := json.Unmarshal([]byte(response), &resp)
 	if err != nil {
@@ -136,9 +141,9 @@ func (g *expressionPromptGenerator) Unmarshal(response string) []testcase.Case {
 		return nil
 	}
 
-	cases := make([]testcase.Case, 0, len(resp.Queries))
+	cases := make([]*testcase.Case, 0, len(resp.Queries))
 	for _, q := range resp.Queries {
-		cases = append(cases, testcase.Case{
+		cases = append(cases, &testcase.Case{
 			SQL: q,
 		})
 	}
@@ -147,5 +152,7 @@ func (g *expressionPromptGenerator) Unmarshal(response string) []testcase.Case {
 }
 
 func init() {
-	registerPromptGenerator(&expressionPromptGenerator{})
+	registerGenerator("expression", GeneratorKindTestcase, func() (PromptGenerator[*testcase.Case], error) {
+		return &expressionPromptGenerator{}, nil
+	}, testcaseStore)
 }

@@ -22,6 +22,13 @@ import (
 	"go.uber.org/zap"
 )
 
+// StatementResult captures the execution result of a single SQL statement.
+type StatementResult struct {
+	SQL   string     `json:"sql"`
+	Rows  [][]string `json:"rows,omitempty"`
+	Error string     `json:"error,omitempty"`
+}
+
 func executeSingleQueryInDB(db *sql.DB, query string, args ...any) ([][]string, error) {
 	dbRows, err := db.Query(query, args...)
 	if err != nil {
@@ -68,16 +75,90 @@ func executeSingleQueryInDB(db *sql.DB, query string, args ...any) ([][]string, 
 	return queryResults, nil
 }
 
+func isQueryStatement(query string) bool {
+	trimmed := strings.TrimSpace(query)
+	if trimmed == "" {
+		return false
+	}
+
+	lower := strings.ToLower(trimmed)
+	switch {
+	case strings.HasPrefix(lower, "select "):
+		return true
+	case strings.HasPrefix(lower, "with "):
+		return true
+	case strings.HasPrefix(lower, "show "):
+		return true
+	case strings.HasPrefix(lower, "explain "):
+		return true
+	case strings.HasPrefix(lower, "describe "):
+		return true
+	case strings.HasPrefix(lower, "desc "):
+		return true
+	case strings.HasPrefix(lower, "values "):
+		return true
+	case strings.HasPrefix(lower, "execute "):
+		return true
+	case strings.HasPrefix(lower, "call "):
+		return true
+	default:
+		return false
+	}
+}
+
+func executeSingleStatementInDB(db *sql.DB, query string, args ...any) ([][]string, error) {
+	if isQueryStatement(query) {
+		return executeSingleQueryInDB(db, query, args...)
+	}
+
+	_, err := db.Exec(query, args...)
+	if err != nil {
+		return nil, err
+	}
+
+	return [][]string{}, nil
+}
+
+// ExecuteStatements runs a list of SQL statements and returns per-statement results.
+// If any statement fails, it returns the error after recording the failure.
+func ExecuteStatements(db *sql.DB, sqls []string, args ...any) ([]StatementResult, error) {
+	results := make([]StatementResult, 0, len(sqls))
+
+	for _, raw := range sqls {
+		query := strings.TrimSpace(raw)
+		if query == "" {
+			continue
+		}
+
+		rows, err := executeSingleStatementInDB(db, query, args...)
+		if err != nil {
+			results = append(results, StatementResult{
+				SQL:   query,
+				Error: err.Error(),
+			})
+			return results, err
+		}
+		result := StatementResult{SQL: query}
+		if len(rows) > 0 {
+			result.Rows = rows
+		}
+		results = append(results, result)
+	}
+
+	return results, nil
+}
+
 func executeSQLsInDB(db *sql.DB, c *Case) (ret [][][]string, retErr error) {
 	allQueries := strings.Split(c.SQL, ";")
 	allResults := make([][][]string, 0, len(allQueries))
 
 	for _, query := range allQueries {
+		query = strings.TrimSpace(query)
 		if len(query) == 0 {
 			continue
 		}
 
-		queryResults, err := executeSingleQueryInDB(db, query, c.Args...)
+		queryResults, err := executeSingleStatementInDB(db, query, c.Args...)
 		if err != nil {
 			return nil, err
 		}

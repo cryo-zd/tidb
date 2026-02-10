@@ -32,6 +32,11 @@ func (g *dmlPromptGenerator) Name() string {
 	return "dml"
 }
 
+// Kind implements PromptGenerator.Kind.
+func (g *dmlPromptGenerator) Kind() GeneratorKind {
+	return GeneratorKindTestcase
+}
+
 // Groups implements PromptGenerator.Groups
 func (g *dmlPromptGenerator) Groups() []string {
 	return []string{
@@ -79,7 +84,7 @@ func (g *dmlPromptGenerator) GeneratePrompt(group string, count int, existCases 
 }
 
 // Unmarshal implements PromptGenerator.Unmarshal
-func (g *dmlPromptGenerator) Unmarshal(response string) []testcase.Case {
+func (g *dmlPromptGenerator) Unmarshal(response string) []*testcase.Case {
 	var resp simplePromptResponse
 	err := json.Unmarshal([]byte(response), &resp)
 	if err != nil {
@@ -87,9 +92,9 @@ func (g *dmlPromptGenerator) Unmarshal(response string) []testcase.Case {
 		return nil
 	}
 
-	cases := make([]testcase.Case, 0, len(resp.Queries))
+	cases := make([]*testcase.Case, 0, len(resp.Queries))
 	for _, q := range resp.Queries {
-		cases = append(cases, testcase.Case{
+		cases = append(cases, &testcase.Case{
 			SQL: q,
 		})
 	}
@@ -98,5 +103,7 @@ func (g *dmlPromptGenerator) Unmarshal(response string) []testcase.Case {
 }
 
 func init() {
-	registerPromptGenerator(&dmlPromptGenerator{})
+	registerGenerator("dml", GeneratorKindTestcase, func() (PromptGenerator[*testcase.Case], error) {
+		return &dmlPromptGenerator{}, nil
+	}, testcaseStore)
 }

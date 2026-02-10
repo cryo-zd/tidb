@@ -1,0 +1,708 @@
+{
+  "mysql-105762": [
+    {
+      "id": "repro_double_least",
+      "source_db": "",
+      "title": "Direct Reproduction with DOUBLE",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [
+        "DROP TABLE IF EXISTS t1;",
+        "CREATE TABLE t1 (a double, b double);",
+        "INSERT INTO t1 VALUES(1, NULL);",
+        "INSERT INTO t1 VALUES(1, 1);"
+      ],
+      "trigger_sql": [
+        "SELECT sum(least(a, b)) FROM t1;"
+      ],
+      "expected": "Returns 1. LEAST(1, NULL) is NULL and ignored; LEAST(1, 1) is 1.",
+      "notes": "Baseline check to verify if TiDB replicates the incorrect NULL propagation logic from the original MySQL bug."
+    },
+    {
+      "id": "mutate_int_groupby",
+      "source_db": "",
+      "title": "Variant: INT type with GROUP BY",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [
+        "DROP TABLE IF EXISTS t2;",
+        "CREATE TABLE t2 (a int, b int, c int);",
+        "INSERT INTO t2 VALUES (10, 5, NULL);",
+        "INSERT INTO t2 VALUES (10, 8, 7);"
+      ],
+      "trigger_sql": [
+        "SELECT a, SUM(LEAST(b, c)) FROM t2 GROUP BY a;"
+      ],
+      "expected": "Returns (10, 7). The first row evaluates LEAST(5, NULL) to NULL, which is ignored by SUM; the second row evaluates LEAST(8, 7) to 7.",
+      "notes": "Changes data type to INT and introduces GROUP BY to test if the bug manifests under aggregation context switching and different type handlers."
+    }
+  ],
+  "mysql-105773": [
+    {
+      "id": "repro_scalar_const",
+      "source_db": "",
+      "title": "Direct Reproduction of Scalar Constant Caching",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [],
+      "trigger_sql": [
+        "SELECT NULL <=> (0 <=> NULL);"
+      ],
+      "expected": "The query should return 0, as (0 <=> NULL) is 0 and NULL <=> 0 is 0.",
+      "notes": "Baseline check to verify if TiDB's expression evaluation handles cached constants in nested NULL-safe comparisons correctly."
+    },
+    {
+      "id": "mutate_optimization_where",
+      "source_db": "",
+      "title": "Context Mutation: WHERE Clause Constant Folding",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [
+        "DROP TABLE IF EXISTS t_cache;",
+        "CREATE TABLE t_cache (a INT);",
+        "INSERT INTO t_cache VALUES (1), (2);"
+      ],
+      "trigger_sql": [
+        "SELECT * FROM t_cache WHERE NULL <=> (0 <=> NULL);"
+      ],
+      "expected": "Result should be an empty set (0 rows).",
+      "notes": "Testing the logic within a WHERE clause to trigger the optimizer's constant folding path, ensuring the cached result is correctly propagated to the filtering engine."
+    }
+  ],
+  "mysql-106241": [
+    {
+      "id": "repro_bit32_max",
+      "source_db": "",
+      "title": "Direct Reproduction: BIT(32) with MAX",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [
+        "DROP TABLE IF EXISTS t_repro_bit;",
+        "CREATE TABLE t_repro_bit(data BIT(32));",
+        "INSERT INTO t_repro_bit(data) VALUES(1);"
+      ],
+      "trigger_sql": [
+        "SELECT MAX(data) FROM t_repro_bit;"
+      ],
+      "expected": "The query should return the value 1, not 0. The wire protocol serialization should correctly handle the BIT column flags.",
+      "notes": "Baseline check to reproduce the exact reported bug scenario involving BIT(32) and MAX aggregation."
+    },
+    {
+      "id": "mutate_bit1_boundary",
+      "source_db": "",
+      "title": "Boundary Mutation: BIT(1) with MAX",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [
+        "DROP TABLE IF EXISTS t_bit1;",
+        "CREATE TABLE t_bit1(data BIT(1));",
+        "INSERT INTO t_bit1(data) VALUES(b'1');"
+      ],
+      "trigger_sql": [
+        "SELECT MAX(data) FROM t_bit1;"
+      ],
+      "expected": "The query should correctly return the value 1.",
+      "notes": "Testing if the serialization issue is specific to word-aligned BIT types (like BIT(32)) or affects minimal BIT types (BIT(1)) where storage packing differs."
+    },
+    {
+      "id": "mutate_bit64_min",
+      "source_db": "",
+      "title": "Type/Func Mutation: BIT(64) with MIN",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [
+        "DROP TABLE IF EXISTS t_bit64;",
+        "CREATE TABLE t_bit64(data BIT(64));",
+        "INSERT INTO t_bit64(data) VALUES(2), (1);"
+      ],
+      "trigger_sql": [
+        "SELECT MIN(data) FROM t_bit64;"
+      ],
+      "expected": "The query should correctly return the value 1.",
+      "notes": "Testing a different aggregate function (MIN) and a larger bit-width (BIT(64)) to check for serialization inconsistencies across different underlying data type representations (e.g., 64-bit integer handling)."
+    }
+  ],
+  "mysql-106286": [
+    {
+      "id": "repro_timestamp_null_safe",
+      "source_db": "",
+      "title": "Direct Reproduction with TIMESTAMP",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [
+        "DROP TABLE IF EXISTS test;",
+        "CREATE TABLE test (id INT, ts TIMESTAMP);",
+        "INSERT INTO test (id, ts) VALUES (2, NULL);",
+        "CREATE TRIGGER tr_bi_check BEFORE INSERT ON test FOR EACH ROW BEGIN IF EXISTS ( SELECT NULL FROM test WHERE test.id <=> NEW.id AND test.ts <=> NEW.ts ) THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Duplicated values not allowed.'; END IF; END;"
+      ],
+      "trigger_sql": [
+        "INSERT INTO test (id, ts) VALUES (2, NULL);"
+      ],
+      "expected": "The trigger should raise error 45000 because the subquery evaluates to true (NULL <=> NULL is 1), indicating a duplicate exists.",
+      "notes": "Baseline check to verify if TiDB correctly handles the NULL-safe comparison operator within trigger logic for TIMESTAMP types, matching the expected MySQL 8.0 behavior."
+    },
+    {
+      "id": "mutate_datetime_type",
+      "source_db": "",
+      "title": "Type Mutation: DATETIME Comparison",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [
+        "DROP TABLE IF EXISTS test_dt;",
+        "CREATE TABLE test_dt (id INT, dt DATETIME);",
+        "INSERT INTO test_dt (id, dt) VALUES (5, NULL);",
+        "CREATE TRIGGER tr_bi_check_dt BEFORE INSERT ON test_dt FOR EACH ROW BEGIN IF EXISTS ( SELECT NULL FROM test_dt WHERE test_dt.id <=> NEW.id AND test_dt.dt <=> NEW.dt ) THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Duplicate found.'; END IF; END;"
+      ],
+      "trigger_sql": [
+        "INSERT INTO test_dt (id, dt) VALUES (5, NULL);"
+      ],
+      "expected": "The trigger should raise error 45000, verifying that the behavior extends consistently to DATETIME types and is not solely a TIMESTAMP artifact.",
+      "notes": "Substituting TIMESTAMP with DATETIME tests if the root cause lies in specific TIMESTAMP handling (timezone/internal conversion) or generic temporal/date NULL comparison logic."
+    }
+  ],
+  "mysql-106444": [
+    {
+      "id": "repro_escape_bool",
+      "source_db": "",
+      "title": "Direct Reproduction of ESCAPE with Boolean Literal",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [
+        "DROP TABLE IF EXISTS t_esc;",
+        "CREATE TABLE t_esc (c1 TEXT NOT NULL);",
+        "INSERT INTO t_esc VALUES ('100');"
+      ],
+      "trigger_sql": [
+        "SELECT (c1 LIKE c1 ESCAPE TRUE) AS proj_result FROM t_esc;",
+        "SELECT * FROM t_esc WHERE c1 LIKE c1 ESCAPE TRUE;"
+      ],
+      "expected": "Both queries should return the same result. If implicit conversion occurs (TRUE -> 1 -> '1'), both should evaluate consistently. The projection should not return 0 while the WHERE clause returns the row.",
+      "notes": "Directly verifies the reported inconsistency between the projection list and the WHERE clause when a Boolean literal is used in the ESCAPE clause."
+    },
+    {
+      "id": "mut_escape_col_int",
+      "source_db": "",
+      "title": "Mutation: ESCAPE with Integer Column",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [
+        "DROP TABLE IF EXISTS t_esc_mut;",
+        "CREATE TABLE t_esc_mut (c1 TEXT, c2 INT);",
+        "INSERT INTO t_esc_mut VALUES ('100', 1);"
+      ],
+      "trigger_sql": [
+        "SELECT (c1 LIKE c1 ESCAPE c2) AS proj_result FROM t_esc_mut;",
+        "SELECT * FROM t_esc_mut WHERE c1 LIKE c1 ESCAPE c2;"
+      ],
+      "expected": "The integer column c2 (value 1) should be cast to a string ('1') consistently. The logic should not diverge between calculating the value for projection and using it for filtering.",
+      "notes": "Moves the implicit type conversion pressure from a constant literal to a column reference. This tests if TiDB's expression evaluator handles type casting differently when the value comes from a data row versus a constant."
+    }
+  ],
+  "mysql-106621": [
+    {
+      "id": "repro_unsigned_array",
+      "source_db": "",
+      "title": "Direct Reproduction of Multivalued Index Partial Output",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [
+        "DROP TABLE IF EXISTS t_repro;",
+        "CREATE TABLE t_repro (id INT, json_value JSON);",
+        "INSERT INTO t_repro (id, json_value) WITH RECURSIVE cte AS (SELECT 1 id UNION ALL SELECT 1 + id FROM cte WHERE id < 200) SELECT id, JSON_ARRAY(1, 2, 3) FROM cte;",
+        "ALTER TABLE t_repro ADD INDEX idx_mvi ((CAST(json_value->'$' AS UNSIGNED ARRAY)));"
+      ],
+      "trigger_sql": [
+        "SELECT id FROM t_repro WHERE 1 MEMBER OF(json_value->'$');"
+      ],
+      "expected": "Should return exactly 200 rows. Partial results indicate a bug in index lookup or matching logic.",
+      "notes": "Baseline check to verify if the multivalued index correctly handles matching the first element in a large set of identical JSON arrays."
+    },
+    {
+      "id": "mutate_signed_negative",
+      "source_db": "",
+      "title": "Mutation: SIGNED Array with Negative Values",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [
+        "DROP TABLE IF EXISTS t_signed;",
+        "CREATE TABLE t_signed (id INT, json_value JSON);",
+        "INSERT INTO t_signed VALUES (1, '[-10, 20, -30]'), (2, '[-10, 20, -30]'), (3, '[-10, 20, -30]');",
+        "CREATE INDEX idx_signed ON t_signed ((CAST(json_value->'$' AS SIGNED ARRAY)));"
+      ],
+      "trigger_sql": [
+        "SELECT * FROM t_signed WHERE -30 MEMBER OF(json_value->'$');"
+      ],
+      "expected": "Should return all 3 rows. Ensures signed integer parsing and negative value matching work correctly in the index.",
+      "notes": "Changing the data type to SIGNED and using negative values stresses the casting and comparison logic differently than UNSIGNED positive integers."
+    }
+  ],
+  "mysql-108008": [
+    {
+      "id": "repro_window_frame_bug",
+      "source_db": "",
+      "title": "Direct Reproduction with VALUES ROW",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [],
+      "trigger_sql": [
+        "SELECT id AS id, parent_id AS parent_id, value AS value, FIRST_VALUE(value) OVER w AS 'FIRST_VALUE', LAG(value) OVER w AS 'LAG', NTH_VALUE(value, 4) OVER w AS 'NTH_VALUE' FROM ( VALUES ROW(1, 1, 1), ROW(2, 1, 20), ROW(3, 1, 300), ROW(4, 1, 4000), ROW(5, 1, 50000), ROW(6, 1, 600000) ) AS t(id, parent_id, value) WINDOW w AS (PARTITION BY parent_id ORDER BY value ROWS BETWEEN 1 PRECEDING AND 2 FOLLOWING);"
+      ],
+      "expected": "For the row with id=2 and value=20, the window frame is {1, 20, 300, 4000}, so FIRST_VALUE must return 1, not 4000.",
+      "notes": "Baseline check to reproduce the exact logic error reported in MySQL using the VALUES ROW syntax."
+    },
+    {
+      "id": "mutate_decimal_type",
+      "source_db": "",
+      "title": "Type Mutation: DECIMAL Data",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [
+        "DROP TABLE IF EXISTS t_dec;",
+        "CREATE TABLE t_dec (id INT, parent_id INT, value DECIMAL(20,5));",
+        "INSERT INTO t_dec VALUES (1, 1, 10.5), (2, 1, 20.5), (3, 1, 30.5), (4, 1, 40.5), (5, 1, 50.5);"
+      ],
+      "trigger_sql": [
+        "SELECT id, value, FIRST_VALUE(value) OVER (PARTITION BY parent_id ORDER BY value ROWS BETWEEN 1 PRECEDING AND 2 FOLLOWING) AS fv FROM t_dec;"
+      ],
+      "expected": "For row value=20.5, the frame contains {10.5, 20.5, 30.5, 40.5}. FIRST_VALUE should return 10.5.",
+      "notes": "Changing data type to DECIMAL and using a persistent table to exercise different memory handling and storage access paths (e.g., TiKV Coprocessor) for window functions."
+    }
+  ],
+  "mysql-108202": [
+    {
+      "id": "direct_repro_views",
+      "source_db": "",
+      "title": "Direct Reproduction: I_S Views with Temptable",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [
+        "DROP VIEW IF EXISTS v_temptable_check;",
+        "CREATE OR REPLACE ALGORITHM=TEMPTABLE DEFINER='root'@'%' SQL SECURITY DEFINER VIEW v_temptable_check AS SELECT VIEW_DEFINITION FROM information_schema.VIEWS;"
+      ],
+      "trigger_sql": [
+        "SELECT * FROM v_temptable_check WHERE VIEW_DEFINITION LIKE 'test';"
+      ],
+      "expected": "Should return an empty result set without errors; specifically should not throw ERROR 3566 (HY000) regarding access to 'can_access_view'.",
+      "notes": "Baseline check to reproduce the exact scenario defined in the bug report: creating a TEMPTABLE algorithm view over information_schema.VIEWS and applying a filter."
+    },
+    {
+      "id": "mutate_tables_source",
+      "source_db": "",
+      "title": "Schema Mutation: I_S Tables with Temptable",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [
+        "DROP VIEW IF EXISTS v_tables_check;",
+        "CREATE OR REPLACE ALGORITHM=TEMPTABLE DEFINER='root'@'%' SQL SECURITY DEFINER VIEW v_tables_check AS SELECT TABLE_NAME, TABLE_SCHEMA FROM information_schema.TABLES;"
+      ],
+      "trigger_sql": [
+        "SELECT * FROM v_tables_check WHERE TABLE_NAME = 'mysql';"
+      ],
+      "expected": "Should return matching rows (or empty set) without access privilege errors related to internal function checks.",
+      "notes": "Shifting the source from information_schema.VIEWS to information_schema.TABLES verifies if the privilege check failure is specific to view metadata or general to temporary materialization of information_schema tables."
+    }
+  ],
+  "mysql-108396": [
+    {
+      "id": "repro_online_ddl_gen_blob",
+      "source_db": "",
+      "title": "Direct Reproduction of Online DDL with Generated Column and BLOB",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [
+        "DROP TABLE IF EXISTS t_repro;",
+        "CREATE TABLE t_repro (a INT, b INT, c TEXT, d INT AS (a + 1), INDEX idx_d (d));",
+        "INSERT INTO t_repro VALUES(1, 1, REPEAT('rocalrulcrcaurcuccoolrouuocacaooaucauualcucuoucucclolcllloocuarcoorlaccarocouuaoorcolloucraoaaooc', 20), DEFAULT);"
+      ],
+      "trigger_sql": [
+        "ALTER TABLE t_repro ADD PRIMARY KEY (a);",
+        "UPDATE t_repro SET b = 2;"
+      ],
+      "expected": "The DDL should complete successfully and the update should execute without reporting corruption or causing a panic.",
+      "notes": "Baseline check to verify if TiDB's Online DDL logic handles the addition of a Primary Key on a table containing generated columns and large row data (TEXT/BLOB) correctly."
+    },
+    {
+      "id": "mutate_varchar_generated",
+      "source_db": "",
+      "title": "Variant: String-Based Generated Column with DDL",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [
+        "DROP TABLE IF EXISTS t_var;",
+        "CREATE TABLE t_var (id INT, val INT, payload TEXT, checksum VARCHAR(64) AS (CONCAT('chk-', id)), INDEX idx_chk (checksum));",
+        "INSERT INTO t_var VALUES(1, 0, REPEAT('datadata', 50), DEFAULT);"
+      ],
+      "trigger_sql": [
+        "ALTER TABLE t_var ADD PRIMARY KEY (id);",
+        "UPDATE t_var SET val = 1;"
+      ],
+      "expected": "The schema change and update should succeed without error.",
+      "notes": "Varying the type of the generated column from INT to VARCHAR and changing the expression logic (concatenation) to test if the schema validation and index building logic is robust across different data type families."
+    }
+  ],
+  "mysql-112557": [
+    {
+      "id": "repro_original_logic",
+      "source_db": "",
+      "title": "Direct Reproduction of EXISTS Simplification",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [
+        "DROP TABLE IF EXISTS t1;",
+        "CREATE TABLE t1 (vkey int, pkey int, c5 int, c7 varchar(200));",
+        "INSERT INTO t1 VALUES (20, 30000, 59, null);",
+        "INSERT INTO t1 VALUES (59, 69000, null, null);"
+      ],
+      "trigger_sql": [
+        "SELECT ref_0.c5 >= (CASE WHEN (TRUE AND EXISTS (SELECT ref_2.pkey FROM t1 AS ref_2 WHERE ref_2.vkey BETWEEN ref_0.c5 AND ref_0.c5)) THEN NULL ELSE (CASE WHEN (FIRST_VALUE('') OVER (PARTITION BY ref_0.c7 ORDER BY ref_0.vkey ASC, ref_0.pkey DESC) >= NULL) THEN NULL ELSE ref_0.pkey END) END) AS c_6 FROM t1 AS ref_0;",
+        "SELECT ref_0.c5 >= (CASE WHEN (EXISTS (SELECT ref_2.pkey FROM t1 AS ref_2 WHERE ref_2.vkey BETWEEN ref_0.c5 AND ref_0.c5)) THEN NULL ELSE (CASE WHEN (FIRST_VALUE('') OVER (PARTITION BY ref_0.c7 ORDER BY ref_0.vkey ASC, ref_0.pkey DESC) >= NULL) THEN NULL ELSE ref_0.pkey END) END) AS c_6 FROM t1 AS ref_0;"
+      ],
+      "expected": "Both queries should return the exact same result set (Rows: NULL, NULL).",
+      "notes": "Directly reproducing the reported bug pattern to verify if TiDB's optimizer incorrectly simplifies 'TRUE AND EXISTS' leading to different result sets."
+    },
+    {
+      "id": "mutate_rank_function",
+      "source_db": "",
+      "title": "Mutation: EXISTS with ROW_NUMBER",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [
+        "DROP TABLE IF EXISTS t_rank;",
+        "CREATE TABLE t_rank (a int, b int, c int);",
+        "INSERT INTO t_rank VALUES (1, 10, 100), (2, 20, 200), (1, 30, 100);"
+      ],
+      "trigger_sql": [
+        "SELECT CASE WHEN (TRUE AND EXISTS (SELECT 1 FROM t_rank AS sub WHERE sub.a = t_rank.a)) THEN NULL ELSE (CASE WHEN (ROW_NUMBER() OVER(PARTITION BY c ORDER BY b) >= NULL) THEN 0 ELSE -1 END) END AS result_check FROM t_rank;",
+        "SELECT CASE WHEN (EXISTS (SELECT 1 FROM t_rank AS sub WHERE sub.a = t_rank.a)) THEN NULL ELSE (CASE WHEN (ROW_NUMBER() OVER(PARTITION BY c ORDER BY b) >= NULL) THEN 0 ELSE -1 END) END AS result_check FROM t_rank;"
+      ],
+      "expected": "Both queries should return identical rows. The removal of the 'TRUE AND' should not affect the outcome.",
+      "notes": "Replacing FIRST_VALUE (aggregate window function) with ROW_NUMBER (ranking window function) to test if the simplification bug affects other window function types."
+    }
+  ],
+  "mysql-113097": [
+    {
+      "id": "repro_alias_subquery",
+      "source_db": "",
+      "title": "Direct Reproduction of Alias Scope Bug",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [
+        "DROP TABLE IF EXISTS temp;",
+        "CREATE TABLE temp (createdAt datetime, timezone varchar(64));",
+        "INSERT INTO temp VALUES ('2022-02-15 16:47:12', null);"
+      ],
+      "trigger_sql": [
+        "SELECT * FROM (SELECT coalesce(timezone, '+00:00') tz, convert_tz(createdAt, '+00:00', (select tz)) ca, if(createdAt, if((select 1) = 1, 1, 1), 1) random FROM temp) aux WHERE ca = '2022-02-15 16:47:12';"
+      ],
+      "expected": "Query should return 1 row with ca = '2022-02-15 16:47:12'.",
+      "notes": "Baseline check for the specific alias reference within a scalar subquery in the projection list."
+    },
+    {
+      "id": "mutate_format_alias",
+      "source_db": "",
+      "title": "Variant: Alias Reference with DATE_FORMAT",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [
+        "DROP TABLE IF EXISTS temp;",
+        "CREATE TABLE temp (createdAt datetime, timezone varchar(64));",
+        "INSERT INTO temp VALUES ('2022-02-15 16:47:12', null);"
+      ],
+      "trigger_sql": [
+        "SELECT * FROM (SELECT coalesce(timezone, '+08:00') tz, date_format(convert_tz(createdAt, '+00:00', (select tz)), '%Y-%m-%d %H:%i:%s') formatted FROM temp) aux WHERE formatted = '2022-02-16 00:47:12';"
+      ],
+      "expected": "Query should return 1 row. The timezone shift to +08:00 should result in 2022-02-16 00:47:12.",
+      "notes": "Changes the target timezone offset to ensure calculation logic works and changes the projection function from direct conversion to formatting to stress the alias resolution."
+    }
+  ],
+  "mysql-113171": [
+    {
+      "id": "repro_direct_dual",
+      "source_db": "",
+      "title": "Direct Reproduction on DUAL",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [],
+      "trigger_sql": [
+        "SELECT SUM(SUBSTRING('text', 1, 3)) FROM dual;",
+        "SELECT SUM(DISTINCT SUBSTRING('text', 1, 3)) FROM dual;"
+      ],
+      "expected": "Both queries should generate a warning (e.g., Error 1292: Truncated incorrect DOUBLE value) because the string 'tex' is implicitly converted to a number. The DISTINCT version should not suppress these warnings.",
+      "notes": "Baseline reproduction using the exact SQL from the bug report against the DUAL table to verify if TiDB's warning system is consistent for implicit type conversion in DISTINCT aggregates."
+    },
+    {
+      "id": "mutate_table_source",
+      "source_db": "",
+      "title": "Table Source Variation",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [
+        "DROP TABLE IF EXISTS t_fuzz_sum;",
+        "CREATE TABLE t_fuzz_sum (s VARCHAR(20));",
+        "INSERT INTO t_fuzz_sum VALUES ('non-numeric'), ('non-numeric');"
+      ],
+      "trigger_sql": [
+        "SELECT SUM(SUBSTRING(s, 1, 5)) FROM t_fuzz_sum;",
+        "SELECT SUM(DISTINCT SUBSTRING(s, 1, 5)) FROM t_fuzz_sum;"
+      ],
+      "expected": "Both queries should attempt to convert 'non-n' to a number and issue a warning. The presence of DISTINCT should not alter the visibility of conversion warnings when processing rows from a table.",
+      "notes": "Variant testing the warning logic against a real table data source instead of constant expressions. This checks if the warning suppression occurs in aggregation code paths (like Hash Aggregation) specific to handling table rows."
+    }
+  ],
+  "mysql-114404": [
+    {
+      "id": "repro_int_cast",
+      "source_db": "",
+      "title": "Direct Reproduction with INT to DATETIME",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [
+        "DROP TABLE IF EXISTS t0;"
+      ],
+      "trigger_sql": [
+        "CREATE TABLE t0 (c0 INT, CHECK (TIMESTAMP '2010-01-01 10:00:00' = CAST(t0.c0 AT TIME ZONE '+00:00' AS DATETIME)));"
+      ],
+      "expected": "The table should be created successfully without throwing ERROR 1305 (42000): FUNCTION sys.time_zone does not exist.",
+      "notes": "Baseline check to verify if TiDB's parser/optimizer incorrectly expands the 'AT TIME ZONE' operator into a non-existent 'sys.time_zone' function call within a CHECK constraint."
+    },
+    {
+      "id": "variant_datetime_type",
+      "source_db": "",
+      "title": "Type Variation: Native DATETIME with Timezone",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [
+        "DROP TABLE IF EXISTS t1;"
+      ],
+      "trigger_sql": [
+        "CREATE TABLE t1 (c0 DATETIME, CHECK (CAST(c0 AT TIME ZONE '+01:00' AS DATETIME) >= DATETIME '2000-01-01 00:00:00'));"
+      ],
+      "expected": "The table should be created successfully.",
+      "notes": "Mutates the source column type from INT to DATETIME to ensure the timezone conversion logic handles temporal types correctly without invoking missing functions."
+    }
+  ],
+  "mysql-114509": [
+    {
+      "id": "repro_direct_if",
+      "source_db": "",
+      "title": "Direct Reproduction of IF() Implicit Conversion",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [
+        "DROP TABLE IF EXISTS t, t1;",
+        "CREATE TABLE t(a VARCHAR(10));",
+        "CREATE TABLE t1(a VARCHAR(64));",
+        "INSERT INTO t1 VALUES('316-354');"
+      ],
+      "trigger_sql": [
+        "INSERT INTO t SELECT IF(a, 1, 0) FROM t1;",
+        "SELECT * FROM t;"
+      ],
+      "expected": "Should implicitly convert '316-354' to a number (truncating at the dash to 316), evaluate as TRUE, and insert 1, consistent with MySQL 8.0 behavior.",
+      "notes": "Baseline check to verify TiDB handles implicit type conversion within the IF() function exactly as the source MySQL behavior described."
+    },
+    {
+      "id": "mutate_case_when_edge",
+      "source_db": "",
+      "title": "Variant using CASE WHEN and Edge Strings",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [
+        "DROP TABLE IF EXISTS t2, t3;",
+        "CREATE TABLE t2(res VARCHAR(10));",
+        "CREATE TABLE t3(data VARCHAR(64));",
+        "INSERT INTO t3 VALUES('316-354'), ('0e10'), ('   ');"
+      ],
+      "trigger_sql": [
+        "INSERT INTO t2 SELECT CASE WHEN data THEN 'T' ELSE 'F' END FROM t3;",
+        "SELECT * FROM t2;"
+      ],
+      "expected": "Should convert '316-354' to 316 (True), '0e10' to 0 (False in boolean context of some versions, or True depending on float parsing), and '   ' to 0 (False), ensuring stability of the casting logic.",
+      "notes": "Switches from IF() to CASE WHEN to target a different code path for conditional evaluation, while introducing mixed alphanumeric and whitespace inputs to stress-test the boolean context parser."
+    }
+  ],
+  "mysql-115035": [
+    {
+      "id": "repro_mysql_115035",
+      "source_db": "",
+      "title": "Direct Reproduction: Empty Table View with Window Func",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [
+        "DROP TABLE IF EXISTS t1;",
+        "CREATE TABLE t1 (c0 INT PRIMARY KEY);"
+      ],
+      "trigger_sql": [
+        "CREATE VIEW v AS SELECT 1 FROM t1 ORDER BY count(*) OVER (PARTITION BY min(t1.c0));",
+        "SELECT * FROM v;"
+      ],
+      "expected": "Should return 1 row, consistent with executing the view definition query directly.",
+      "notes": "Baseline check to reproduce the reported bug where View materialization with an empty table and window functions loses the implicit aggregation row."
+    },
+    {
+      "id": "mutate_agg_func",
+      "source_db": "",
+      "title": "Variant: Swapping Aggregates (MAX/SUM)",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [
+        "DROP TABLE IF EXISTS t2;",
+        "CREATE TABLE t2 (c0 VARCHAR(10) PRIMARY KEY);"
+      ],
+      "trigger_sql": [
+        "CREATE VIEW v2 AS SELECT 'X' FROM t2 ORDER BY sum(1) OVER (PARTITION BY max(t2.c0));",
+        "SELECT * FROM v2;"
+      ],
+      "expected": "Should return 1 row, ensuring the bug is not specific to COUNT/MIN or INT types.",
+      "notes": "Tests if the faulty optimization path is triggered by different aggregate functions (SUM, MAX) and data types (VARCHAR) within the window specification."
+    }
+  ],
+  "mysql-116393": [
+    {
+      "id": "repro_benchmark_sha2_md5",
+      "source_db": "",
+      "title": "Direct Reproduction with Deterministic Constants",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [],
+      "trigger_sql": [
+        "SELECT BENCHMARK(1000000, CONCAT(SHA2(CONCAT('MySQL', 'BenchMark'), 256), POW(12345.6789, 2.71828), 'const', MD5('2023-01-01')));"
+      ],
+      "expected": "Execution time should remain consistent (fast) and not exhibit significant degradation (e.g., 8s) compared to baseline performance.",
+      "notes": "Replaces non-deterministic functions (NOW(), RAND()) with constants to isolate the CPU performance of MD5, SHA2, and mathematical operations, ensuring the test is repeatable and deterministically stresses the compute engine."
+    },
+    {
+      "id": "mutate_long_string_stress",
+      "source_db": "",
+      "title": "Large Input String Mutation",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [],
+      "trigger_sql": [
+        "SELECT BENCHMARK(50000, SHA2(REPEAT('TiDB_Performance_Test_Vector', 200), 512));"
+      ],
+      "expected": "Execution time should scale linearly with input size without exponential spikes or memory handling delays.",
+      "notes": "Shifts the stress test from pure iteration count to input size complexity. This targets potential memory allocation or buffer-copying inefficiencies in the hashing implementation that might not be triggered by short constant strings."
+    }
+  ],
+  "mysql-116467": [
+    {
+      "id": "repro_direct_sequence",
+      "source_db": "",
+      "title": "Direct Reproduction of High-Frequency Update",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [
+        "DROP TABLE IF EXISTS sequence;",
+        "CREATE TABLE sequence (seq_name VARCHAR(100) NOT NULL, current_value INT NOT NULL, increment INT NOT NULL DEFAULT 1, PRIMARY KEY (seq_name)) ENGINE = INNODB;",
+        "INSERT INTO sequence VALUES('genid', 0, 1);"
+      ],
+      "trigger_sql": [
+        "DROP PROCEDURE IF EXISTS perf_test;",
+        "CREATE PROCEDURE perf_test() BEGIN DECLARE i INT DEFAULT 0; START TRANSACTION; WHILE i < 1000 DO UPDATE sequence SET current_value = current_value + increment WHERE seq_name = 'genid'; SET i = i + 1; END WHILE; COMMIT; END;",
+        "CALL perf_test();"
+      ],
+      "expected": "The procedure should execute and commit successfully within a reasonable time frame, showing no significant regression in transaction throughput.",
+      "notes": "Directly replicates the workload described in the bug report: a single transaction performing 1000 read-modify-write updates on a primary key to stress the DML transaction layer."
+    },
+    {
+      "id": "mutate_unique_key_update",
+      "source_db": "",
+      "title": "Variant: Update via Secondary Unique Key",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [
+        "DROP TABLE IF EXISTS sequence_unique;",
+        "CREATE TABLE sequence_unique (id INT AUTO_INCREMENT PRIMARY KEY, seq_code VARCHAR(100) NOT NULL UNIQUE, current_value BIGINT NOT NULL, increment INT NOT NULL DEFAULT 1) ENGINE = INNODB;",
+        "INSERT INTO sequence_unique (seq_code, current_value, increment) VALUES('genid_code', 0, 1);"
+      ],
+      "trigger_sql": [
+        "DROP PROCEDURE IF EXISTS perf_test_unique;",
+        "CREATE PROCEDURE perf_test_unique() BEGIN DECLARE i INT DEFAULT 0; START TRANSACTION; WHILE i < 1000 DO UPDATE sequence_unique SET current_value = current_value + increment WHERE seq_code = 'genid_code'; SET i = i + 1; END WHILE; COMMIT; END;",
+        "CALL perf_test_unique();"
+      ],
+      "expected": "Performance should be consistent, utilizing the secondary unique index for the lookup.",
+      "notes": "Mutates the update target from the Primary Key to a Secondary Unique Key and changes the value type to BIGINT. This tests if the performance regression is specific to primary key handling or affects general indexed update paths."
+    }
+  ],
+  "mysql-118834": [
+    {
+      "id": "repro_mysql_118834",
+      "source_db": "",
+      "title": "Direct Reproduction of Float Negation Comparison",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [
+        "DROP TABLE IF EXISTS t1;",
+        "CREATE TABLE t1 (c0 decimal(10,0), c1 varchar(500), c2 mediumint, c3 float, c4 float, UNIQUE KEY c0 (c0), UNIQUE KEY c2 (c2), UNIQUE KEY c4 (c4), KEY i1 (c2 DESC, c4, c0, c3 DESC, c1(4)));",
+        "INSERT INTO t1 VALUES (NULL,'str1',NULL,0.0190223,18783700),(NULL,'str2',NULL,0.0341699,366882000);"
+      ],
+      "trigger_sql": [
+        "SELECT ALL t1.c0, t1.c4 FROM t1 WHERE (t1.c4) < -(-1.7976931348623157E308);",
+        "SELECT ALL t1.c0, t1.c4 FROM t1 WHERE (t1.c4) < (1.7976931348623157E308);"
+      ],
+      "expected": "Both queries should return 2 rows. -(-1.7976931348623157E308) is mathematically equivalent to 1.7976931348623157E308.",
+      "notes": "Direct reproduction of the reported bug to verify if TiDB incorrectly optimizes the range condition when using double negation on MAX_FLOAT."
+    },
+    {
+      "id": "mutate_float_inclusive_boundary",
+      "source_db": "",
+      "title": "Variation: Inclusive Boundary and Simplified Schema",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [
+        "DROP TABLE IF EXISTS t2;",
+        "CREATE TABLE t2 (c4 float, KEY k_c4 (c4));",
+        "INSERT INTO t2 VALUES (0.0), (100.0);"
+      ],
+      "trigger_sql": [
+        "SELECT * FROM t2 WHERE c4 <= -(-1.7976931348623157E308);",
+        "SELECT * FROM t2 WHERE c4 <= 1.7976931348623157E308;"
+      ],
+      "expected": "Both queries should return 2 rows. The negation logic must hold for less-than-or-equal comparisons as well.",
+      "notes": "Tests the operator boundary (<= instead of <) on a simplified schema to isolate the range optimizer issue from the complex composite index context."
+    }
+  ],
+  "mysql-118838": [
+    {
+      "id": "repro_mysql_118838",
+      "source_db": "",
+      "title": "Direct Reproduction of Float vs Varchar Infinity Comparison",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [
+        "DROP TABLE IF EXISTS t0;",
+        "DROP TABLE IF EXISTS t1;",
+        "CREATE TABLE t0 (c0 decimal(10,0) DEFAULT NULL, c1 float NOT NULL, PRIMARY KEY (c1), UNIQUE KEY i1 (c1));",
+        "INSERT INTO t0 VALUES (1, -1496950000), (1, 0.485855);",
+        "CREATE TABLE t1 (c0 float NOT NULL, c1 float DEFAULT NULL, c2 varchar(500) DEFAULT NULL, PRIMARY KEY (c0), UNIQUE KEY i2 (c2(3) DESC, c1));",
+        "INSERT INTO t1 VALUES (0.833634, 0.19342, '1e500');"
+      ],
+      "trigger_sql": [
+        "SELECT t0.c1, t1.c2 FROM t1, t0 WHERE (NOT ((t0.c1) >= (t1.c2)));"
+      ],
+      "expected": "Should return 2 rows as the finite float values are strictly less than the '1e500' (Infinity).",
+      "notes": "Baseline check to verify if TiDB incorrectly filters rows when comparing finite floats against overflow varchar strings using a negated comparison."
+    },
+    {
+      "id": "mutate_operator_direct",
+      "source_db": "",
+      "title": "Simplified Operator Comparison (<)",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [
+        "DROP TABLE IF EXISTS t_num;",
+        "DROP TABLE IF EXISTS t_str;",
+        "CREATE TABLE t_num (val FLOAT PRIMARY KEY);",
+        "INSERT INTO t_num VALUES (-1.5), (0.0), (1.2);",
+        "CREATE TABLE t_str (huge VARCHAR(50));",
+        "INSERT INTO t_str VALUES ('1e500');"
+      ],
+      "trigger_sql": [
+        "SELECT t_num.val, t_str.huge FROM t_num, t_str WHERE t_num.val < t_str.huge;"
+      ],
+      "expected": "Should return all 3 rows from t_num matched with the row from t_str.",
+      "notes": "Replaces the complex `NOT (>=)` logic with a direct `<` comparison. This targets the core type conversion and comparison logic without the boolean negation overhead, isolating whether the issue lies in the comparison executor or the expression rewriting."
+    }
+  ]
+}

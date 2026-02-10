@@ -20,16 +20,17 @@ To add a new prompt generator, you need to implement the `PromptGenerator` inter
 
 ```go
 // PromptGenerator is the interface for prompt generator.
-type PromptGenerator interface {
+type PromptGenerator[T any] interface {
 	Name() string
+	Kind() GeneratorKind
 	Groups() []string
 
-	GeneratePrompt(group string, count int, existCases []*testcase.Case) []openai.ChatCompletionMessageParamUnion
-	Unmarshal(response string) []testcase.Case
+	GeneratePrompt(group string, count int, existItems []T) []openai.ChatCompletionMessageParamUnion
+	Unmarshal(response string) []T
 }
 ```
 
-The `Name` method returns the name of the prompt generator. The `Groups` method returns the sub-classes of the prompt generator. The `GeneratePrompt` method generates the prompt for the test cases. The `Unmarshal` method unmarshals the response from the OpenAI API to the test cases.
+The `Name` method returns the name of the prompt generator. The `Groups` method returns the sub-classes of the prompt generator. The `GeneratePrompt` method generates the prompt for the test cases. The `Unmarshal` method unmarshals the response from the OpenAI API to the generated items.
 
 The `Groups()` method is used to classify the test cases. For example, the `expression` prompt generator has the following groups:
 

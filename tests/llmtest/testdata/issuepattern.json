@@ -1,0 +1,496 @@
+{
+  "mysql-105762": [
+    {
+      "id": "mysql-105762",
+      "source_db": "mysql",
+      "title": "Bug #105762 sum(least(a, NULL)) result error",
+      "symptom": "wrong_result",
+      "feature": [
+        "AGGREGATE",
+        "LEAST",
+        "NULL"
+      ],
+      "setup_sql": [
+        "DROP TABLE IF EXISTS t1;",
+        "CREATE TABLE t1 (a double, b double);",
+        "INSERT INTO t1 VALUES(1, NULL);",
+        "INSERT INTO t1 VALUES(1, 1);"
+      ],
+      "trigger_sql": [
+        "SELECT sum(least(a, b)) FROM t1;"
+      ],
+      "expected": "The query should return 1, because LEAST(1, NULL) is NULL (ignored in SUM) and LEAST(1, 1) is 1.",
+      "notes": "Reported version result is 2, indicating LEAST(a, NULL) incorrectly returned a."
+    }
+  ],
+  "mysql-105773": [
+    {
+      "id": "mysql-105773",
+      "source_db": "mysql",
+      "title": "Bug #105773 Bad caching of converted constants in NULL-safe comparison",
+      "symptom": "wrong_result",
+      "feature": [
+        "NULL-safe comparison",
+        "\u003c=\u003e",
+        "constant caching"
+      ],
+      "setup_sql": [],
+      "trigger_sql": [
+        "SELECT NULL \u003c=\u003e (0 \u003c=\u003e NULL);"
+      ],
+      "expected": "The query should return 0 (false), as (0 \u003c=\u003e NULL) is 0 and NULL \u003c=\u003e 0 is also 0.",
+      "notes": "Issue observed in MySQL 8.0+ due to caching logic in Item_comparator. The inner comparison result should not be cached as NULL."
+    }
+  ],
+  "mysql-106241": [
+    {
+      "id": "mysql-106241",
+      "source_db": "mysql",
+      "title": "Bug #106241 BIT column serialized incorrectly for aggregate function",
+      "symptom": "incompat",
+      "feature": [
+        "BIT",
+        "Aggregate Function",
+        "MAX",
+        "Serialization",
+        "Wire Protocol"
+      ],
+      "setup_sql": [
+        "CREATE TABLE bits(data BIT(32));",
+        "INSERT INTO bits(data) VALUES(1);"
+      ],
+      "trigger_sql": [
+        "SELECT MAX(data) FROM bits;"
+      ],
+      "expected": "The server should serialize the BIT column value consistently with its metadata flags. If BINARY_FLAG is set in the ColumnDefinition packet, the data should be sent as text; otherwise, it should be sent as binary.",
+      "notes": "The issue involves wire protocol serialization inconsistency introduced in MySQL 8.0.28. Specifically, for BIT columns in aggregate functions like MAX, the server sends BINARY_FLAG but transmits binary data instead of text, causing clients like MySQL Workbench to display incorrect results (e.g., '0' instead of '1')."
+    }
+  ],
+  "mysql-106286": [
+    {
+      "id": "mysql-106286",
+      "source_db": "mysql",
+      "title": "Bug #106286 Null-safe compare works incorrectly with TIMESTAMP in a trigger",
+      "symptom": "wrong_result",
+      "feature": [
+        "Trigger",
+        "TIMESTAMP",
+        "NULL-safe compare",
+        "\u003c=\u003e"
+      ],
+      "setup_sql": [
+        "CREATE TABLE test (id INT, ts TIMESTAMP);",
+        "INSERT INTO test (id, ts) VALUES (2, NULL);",
+        "CREATE TRIGGER tr_bi_check_uniqueness_with_nulls BEFORE INSERT ON test FOR EACH ROW BEGIN IF EXISTS ( SELECT NULL FROM test WHERE test.id \u003c=\u003e NEW.id AND test.ts \u003c=\u003e NEW.ts ) THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Duplicated values not allowed.'; END IF; END;"
+      ],
+      "trigger_sql": [
+        "INSERT INTO test (id, ts) VALUES (2, NULL);"
+      ],
+      "expected": "The trigger should raise error '45000' because the condition 'NULL \u003c=\u003e NULL' is true, indicating the row already exists.",
+      "notes": "Specific to MySQL 8.0.x vs 5.7 behavior."
+    }
+  ],
+  "mysql-106444": [
+    {
+      "id": "mysql-106444",
+      "source_db": "mysql",
+      "title": "Bug #106444 ESCAPE keyword with non-string values",
+      "symptom": "wrong_result",
+      "feature": [
+        "LIKE",
+        "ESCAPE",
+        "Type Conversion",
+        "WHERE",
+        "TEXT"
+      ],
+      "setup_sql": [
+        "DROP TABLE IF EXISTS v0;",
+        "CREATE TABLE v0 ( c1 TEXT NOT NULL );",
+        "INSERT INTO v0 VALUES ('100');"
+      ],
+      "trigger_sql": [
+        "SELECT (c1 LIKE c1 ESCAPE '%') FROM v0;",
+        "SELECT (c1 LIKE c1 ESCAPE TRUE) FROM v0;",
+        "SELECT (c1 LIKE c1 ESCAPE 1) FROM v0;"
+      ],
+      "expected": "The ESCAPE clause should either reject non-string arguments with an error or, if implicit casting occurs, the result should be consistent. Currently, `SELECT (c1 LIKE c1 ESCAPE TRUE)` returns 0 while `SELECT * FROM v0 WHERE c1 LIKE c1 ESCAPE TRUE` returns the row, indicating a mismatch in evaluation logic.",
+      "notes": "Observed in MySQL 8.0.27, 8.0.28, 5.7.37. The issue highlights inconsistent behavior between WHERE clause evaluation and projection list evaluation when non-string values (Booleans or Integers) are used in the ESCAPE clause."
+    }
+  ],
+  "mysql-106621": [
+    {
+      "id": "mysql-106621",
+      "source_db": "mysql",
+      "title": "Multivalued index creation results in partial output",
+      "symptom": "wrong_result",
+      "feature": [
+        "JSON",
+        "Multivalued Index",
+        "MEMBER OF",
+        "Functional Index"
+      ],
+      "setup_sql": [
+        "DROP TABLE IF EXISTS test;",
+        "CREATE TABLE test (id INT, json_value JSON);",
+        "INSERT INTO test (id, json_value)",
+        "WITH RECURSIVE cte AS (",
+        "SELECT 1 id",
+        "UNION ALL",
+        "SELECT 1 + id FROM cte WHERE id \u003c 10000",
+        ")",
+        "SELECT id, JSON_ARRAY(1, 2, 3) FROM cte;",
+        "ALTER TABLE test ADD INDEX multivalued_index ((CAST(json_value-\u003e'$' AS UNSIGNED ARRAY)));"
+      ],
+      "trigger_sql": [
+        "SELECT id FROM test WHERE 1 MEMBER OF (json_value-\u003e'$');"
+      ],
+      "expected": "The query should return all rows where the JSON array contains the specified value (1). Without the bug, the result count matches the table count (or full scan result).",
+      "notes": "Original bug involves randomized data generation and specific index creation on MySQL 8.0.27/28 causing partial results. Simplified setup provided for pattern matching."
+    }
+  ],
+  "mysql-108008": [
+    {
+      "id": "mysql-108008",
+      "source_db": "mysql",
+      "title": "Bug #108008 mysql window function first_value wrong",
+      "symptom": "wrong_result",
+      "feature": [
+        "window_function",
+        "first_value",
+        "nth_value",
+        "lag",
+        "window_frame"
+      ],
+      "setup_sql": [],
+      "trigger_sql": [
+        "SELECT id AS id, parent_id AS parent_id, value AS value,",
+        "FIRST_VALUE(value) OVER w AS 'FIRST_VALUE',",
+        "LAG(value) OVER w AS 'LAG',",
+        "NTH_VALUE(value, 4) OVER w AS 'NTH_VALUE'",
+        "FROM (",
+        "VALUES ROW(1, 1, 000001), ROW(2, 1, 000020), ROW(3, 1, 000300), ROW(4, 1, 004000), ROW(5, 1, 050000), ROW(6, 1, 600000)",
+        ") AS t(id, parent_id, value)",
+        "WINDOW w AS (PARTITION BY parent_id ORDER BY value ROWS BETWEEN 1 PRECEDING AND 2 FOLLOWING);"
+      ],
+      "expected": "The FIRST_VALUE function should return the value of the first row in the window frame. For example, for the row with id=2 and value=20, the window frame includes rows with values 1, 20, 300, 4000, so FIRST_VALUE should be 1, not 4000.",
+      "notes": "The bug description indicates FIRST_VALUE incorrectly displays the value corresponding to the row indicated by NTH_VALUE. The provided incorrect output shows FIRST_VALUE returning 4000 when it should return 1 (for row 2) and 20 when it should return 20 (for row 3), though the row 3 output in the report shows FIRST_VALUE as 20 which might be coincidental or a typo in the report, but the row 2 discrepancy is clear."
+    }
+  ],
+  "mysql-108202": [
+    {
+      "id": "mysql-108202",
+      "source_db": "mysql",
+      "title": "Bug #108202 Temptable views on information_schema fails on filters",
+      "symptom": "incompat",
+      "feature": [
+        "information_schema",
+        "Views",
+        "ALGORITHM=TEMPTABLE",
+        "SQL SECURITY"
+      ],
+      "setup_sql": [
+        "CREATE OR REPLACE ALGORITHM=TEMPTABLE DEFINER='root'@'localhost' SQL SECURITY DEFINER VIEW `test` AS SELECT VIEW_DEFINITION FROM `information_schema`.`VIEWS`;"
+      ],
+      "trigger_sql": [
+        "SELECT * FROM test WHERE VIEW_DEFINITION LIKE 'asdf';"
+      ],
+      "expected": "The query should execute successfully and return an empty set (or matching rows), without throwing an access error.",
+      "notes": "Reproducible in MySQL 8.0.29 and 8.0.30. Error message: ERROR 3566 (HY000): Access to native function 'can_access_view' is rejected."
+    }
+  ],
+  "mysql-108396": [
+    {
+      "id": "mysql-108396",
+      "source_db": "mysql",
+      "title": "Bug #108396 ERROR 1712 (HY000): Index PRIMARY is corrupted",
+      "symptom": "panic",
+      "feature": [
+        "Online DDL",
+        "Primary Key",
+        "Generated Column",
+        "InnoDB"
+      ],
+      "setup_sql": [
+        "CREATE TABLE e1 (a INT , b INT , c BLOB, d INT AS (a + 1), INDEX id(d));",
+        "INSERT INTO e1 VALUES(1, 1, REPEAT('rocalrulcrcaurcuccoolrouuocacaooaucauualcucuoucucclolcllloocuarcoorlaccarocouuaoorcolloucraoaaooc',281), DEFAULT);"
+      ],
+      "trigger_sql": [
+        "ALTER TABLE e1 ADD PRIMARY KEY (a);",
+        "UPDATE e1 SET b=2;"
+      ],
+      "expected": "The Online DDL operation and concurrent update should complete successfully without reporting index corruption.",
+      "notes": "The original reproduction relies on InnoDB debug synchronization (DEBUG_SYNC) to orchestrate a race condition between the Online DDL and the concurrent update. This is an internal MySQL InnoDB bug involving the handling of the primary index during alteration."
+    }
+  ],
+  "mysql-112557": [
+    {
+      "id": "mysql-112557",
+      "source_db": "mysql",
+      "title": "Bug #112557 Inconsistent results of SELECT statement with EXISTS clause",
+      "symptom": "wrong_result",
+      "feature": [
+        "EXISTS",
+        "Window Function",
+        "CASE",
+        "Subquery"
+      ],
+      "setup_sql": [
+        "DROP TABLE IF EXISTS t1;",
+        "CREATE TABLE t1 (vkey int, pkey int, c5 int, c7 varchar(200));",
+        "INSERT INTO t1 VALUES (20, 30000, 59, null);",
+        "INSERT INTO t1 VALUES (59, 69000, null, null);"
+      ],
+      "trigger_sql": [
+        "SELECT ref_0.c5 \u003e= (CASE WHEN (TRUE AND EXISTS (SELECT ref_2.pkey FROM t1 AS ref_2 WHERE ref_2.vkey BETWEEN ref_0.c5 AND ref_0.c5)) THEN NULL ELSE (CASE WHEN (FIRST_VALUE('') OVER (PARTITION BY ref_0.c7 ORDER BY ref_0.vkey ASC, ref_0.pkey DESC) \u003e= NULL) THEN NULL ELSE ref_0.pkey END) END) AS c_6 FROM t1 AS ref_0;",
+        "SELECT ref_0.c5 \u003e= (CASE WHEN (EXISTS (SELECT ref_2.pkey FROM t1 AS ref_2 WHERE ref_2.vkey BETWEEN ref_0.c5 AND ref_0.c5)) THEN NULL ELSE (CASE WHEN (FIRST_VALUE('') OVER (PARTITION BY ref_0.c7 ORDER BY ref_0.vkey ASC, ref_0.pkey DESC) \u003e= NULL) THEN NULL ELSE ref_0.pkey END) END) AS c_6 FROM t1 AS ref_0;"
+      ],
+      "expected": "Both queries should return the same result set. Expected result based on older versions (8.0.0-8.0.26):\n+------+\n| c_6  |\n+------+\n| NULL |\n| NULL |\n+------+",
+      "notes": "Bug verified in versions 8.0.27 - 8.0.34. Inconsistent behavior arises when simplifying 'true and exists(...)' to 'exists(...)'."
+    }
+  ],
+  "mysql-113097": [
+    {
+      "id": "mysql-113097",
+      "source_db": "mysql",
+      "title": "Bug #113097 query bug racecondition",
+      "symptom": "wrong_result",
+      "feature": [
+        "subquery",
+        "convert_tz",
+        "coalesce",
+        "datetime",
+        "alias"
+      ],
+      "setup_sql": [
+        "DROP TABLE IF EXISTS temp;",
+        "CREATE TABLE temp (createdAt datetime, timezone varchar(64));",
+        "INSERT INTO temp VALUES ('2022-02-15 16:47:12', null);"
+      ],
+      "trigger_sql": [
+        "SELECT * FROM (",
+        "  SELECT",
+        "    coalesce(timezone, '+00:00') tz,",
+        "    convert_tz(createdAt, '+00:00', (select tz)) ca,",
+        "    if(createdAt, if((select 1) = 1, 1, 1), 1) random",
+        "  FROM temp",
+        ") aux",
+        "WHERE ca = '2022-02-15 16:47:12';"
+      ],
+      "expected": "The query should return 1 row. The calculated 'ca' value should be '2022-02-15 16:47:12'.",
+      "notes": "The issue involves referencing an alias defined in the SELECT list inside a subquery within the same projection list. Reported as a racecondition/non-deterministic wrong result."
+    }
+  ],
+  "mysql-113171": [
+    {
+      "id": "mysql-113171",
+      "source_db": "mysql",
+      "title": "Bug #113171 sum(distinct substring()) does not give warnings, while sum(substring() does",
+      "symptom": "incompat",
+      "feature": [
+        "SUM",
+        "DISTINCT",
+        "SUBSTRING",
+        "Type Conversion",
+        "Warnings"
+      ],
+      "setup_sql": [],
+      "trigger_sql": [
+        "SELECT SUM(SUBSTRING(\"text\", 1, 3)) FROM dual;",
+        "SELECT SUM(DISTINCT SUBSTRING(\"text\", 1, 3)) FROM dual;"
+      ],
+      "expected": "Both queries should generate a warning indicating a truncated incorrect DOUBLE value, as implicit conversion of a non-numeric string to a number occurs in both cases.",
+      "notes": "The issue highlights an inconsistency where SUM(DISTINCT ...) suppresses warnings generated by implicit type conversion that SUM(...) would otherwise report."
+    }
+  ],
+  "mysql-114404": [
+    {
+      "id": "mysql-114404",
+      "source_db": "mysql",
+      "title": "Bug #114404 Missing time_zone function",
+      "symptom": "incompat",
+      "feature": [
+        "CHECK",
+        "TIMESTAMP",
+        "CAST",
+        "AT TIME ZONE",
+        "time_zone"
+      ],
+      "setup_sql": [],
+      "trigger_sql": [
+        "CREATE TABLE t0 (c0 INT, CHECK (TIMESTAMP '2010-01-01 10:00:00' = CAST(t0.c0 AT TIME ZONE '+00:00' AS DATETIME)));"
+      ],
+      "expected": "The statement should succeed without throwing ERROR 1305 (42000): FUNCTION sys.time_zone does not exist.",
+      "notes": "Error occurs when using 'CAST(... AT TIME ZONE ...)'. Compilation flags include ASAN/UBSAN."
+    }
+  ],
+  "mysql-114509": [
+    {
+      "id": "mysql-114509",
+      "source_db": "mysql",
+      "title": "Bug #114509 Behavior in 8.0 differs from 5.7",
+      "symptom": "incompat",
+      "feature": [
+        "IF",
+        "sql_mode",
+        "Type Conversion",
+        "INSERT SELECT"
+      ],
+      "setup_sql": [
+        "DROP TABLE IF EXISTS t, t1;",
+        "CREATE TABLE t(a VARCHAR(10));",
+        "CREATE TABLE t1(a VARCHAR(64));",
+        "INSERT INTO t1 VALUES('316-354');"
+      ],
+      "trigger_sql": [
+        "SELECT IF(a, 1, 0) FROM t1;",
+        "INSERT INTO t SELECT IF(a, 1, 0) FROM t1;",
+        "SET @@sql_mode='';",
+        "INSERT INTO t SELECT IF(a, 1, 0) FROM t1;"
+      ],
+      "expected": "Behavior should be consistent between versions regarding implicit conversion of non-numeric strings in boolean context (specifically within IF function). In 5.7, warnings/errors are returned.",
+      "notes": "The difference involves how MySQL handles the string '316-354' when used as the condition in IF(a, 1, 0)."
+    }
+  ],
+  "mysql-115035": [
+    {
+      "id": "mysql-115035",
+      "source_db": "mysql",
+      "title": "Bug #115035 View with ORDER BY misses a row",
+      "symptom": "wrong_result",
+      "feature": [
+        "View",
+        "Window Functions",
+        "ORDER BY",
+        "Aggregate",
+        "COUNT"
+      ],
+      "setup_sql": [
+        "CREATE TABLE t1 (c0 INT PRIMARY KEY);"
+      ],
+      "trigger_sql": [
+        "create view v as SELECT 1 FROM t1 ORDER BY count(*) OVER (PARTITION BY min(t1.c0));",
+        "select * from v;"
+      ],
+      "expected": "The query `select * from v;` should return 1 row, consistent with the direct execution of the view definition query.",
+      "notes": "The bug occurs when an empty table is queried with a window function (COUNT) that forces a single row result. This context is lost when the query is materialized in a View definition, leading to an incorrect empty set result."
+    }
+  ],
+  "mysql-116393": [
+    {
+      "id": "mysql-116393",
+      "source_db": "mysql",
+      "title": "Bug #116393 Degrading performance of MD5(), SHA2() functions",
+      "symptom": "perf",
+      "feature": [
+        "MD5",
+        "SHA2",
+        "BENCHMARK",
+        "Performance"
+      ],
+      "setup_sql": [],
+      "trigger_sql": [
+        "SELECT BENCHMARK(10000000,md5(now()));",
+        "SELECT BENCHMARK(1000000, CONCAT(SHA2(CONCAT('MySQL', 'BenchMark'), 256), POW(12345.6789, 2.71828), RAND(), MD5(NOW())));"
+      ],
+      "expected": "The execution duration should remain consistent with earlier versions (e.g., ~1.5s for the MD5 benchmark) rather than degrading to ~8s.",
+      "notes": "Performance regression reported starting from MySQL 8.0.30 compared to 5.6/8.0.21. TiDB should verify its own implementation performance is acceptable."
+    }
+  ],
+  "mysql-116467": [
+    {
+      "id": "mysql-116467",
+      "source_db": "mysql",
+      "title": "Bug #116467 The DML performance of a single connection in MySQL 8 is half that of MySQL 5.7.",
+      "symptom": "perf",
+      "feature": [
+        "Update",
+        "Transaction",
+        "Performance",
+        "Regression"
+      ],
+      "setup_sql": [
+        "CREATE DATABASE IF NOT EXISTS test;",
+        "USE test;",
+        "DROP TABLE IF EXISTS sequence;",
+        "CREATE TABLE sequence (",
+        "  seq_name varchar(100) not null,",
+        "  current_value int not null,",
+        "  increment int not null default 1,",
+        "  primary key (seq_name)",
+        ") engine = innodb;",
+        "INSERT INTO sequence VALUES('genid', 0, 1);"
+      ],
+      "trigger_sql": [
+        "UPDATE sequence SET current_value = current_value + increment WHERE seq_name = 'genid';"
+      ],
+      "expected": "The operation should complete in a time comparable to previous versions (approx 1.2s for 1000 updates), without significant regression.",
+      "notes": "Workload context: Execute the update statement 1000 times in a single transaction before committing. MySQL 8.0.39 was ~2.7s vs MySQL 5.7.44 ~1.3s."
+    }
+  ],
+  "mysql-118834": [
+    {
+      "id": "mysql-118834",
+      "source_db": "mysql",
+      "title": "Bug #118834 Change a number in the query statement to -(-NUMBER), the query return different results.",
+      "symptom": "wrong_result",
+      "feature": [
+        "Float",
+        "Range",
+        "Index",
+        "Optimization",
+        "Comparison"
+      ],
+      "setup_sql": [
+        "CREATE DATABASE IF NOT EXISTS tlp2025052847;",
+        "USE tlp2025052847;",
+        "CREATE TABLE `t1` (",
+        "`c0` decimal(10,0) DEFAULT NULL,",
+        "`c1` varchar(500) DEFAULT NULL,",
+        "`c2` mediumint DEFAULT NULL,",
+        "`c3` float DEFAULT NULL,",
+        "`c4` float DEFAULT NULL,",
+        "UNIQUE KEY `c0` (`c0`),",
+        "UNIQUE KEY `c2` (`c2`),",
+        "UNIQUE KEY `c4` (`c4`),",
+        "KEY `i1` (`c2` DESC,`c4`,`c0`,`c3` DESC,`c1`(4)) USING BTREE",
+        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;",
+        "INSERT INTO `t1` VALUES (NULL,'+h\tk\\r',NULL,0.0190223,18783700),(NULL,'-119044867',NULL,0.0341699,366882000);"
+      ],
+      "trigger_sql": [
+        "SELECT ALL t1.c0 AS ref0, t1.c1 AS ref1, t1.c2 AS ref2, t1.c3 AS ref3, t1.c4 AS ref4 FROM t1 WHERE (t1.c4) \u003c -(-1.7976931348623157E308);",
+        "SELECT ALL t1.c0 AS ref0, t1.c1 AS ref1, t1.c2 AS ref2, t1.c3 AS ref3, t1.c4 AS ref4 FROM t1 WHERE (t1.c4) \u003c (1.7976931348623157E308);"
+      ],
+      "expected": "Both queries should return the same result (2 rows) because -(-1.7976931348623157E308) evaluates to 1.7976931348623157E308.",
+      "notes": "The bug occurs when comparing a float column against the negation of the max float value. The optimizer incorrectly identifies the condition as impossible when using the expression -(-1.7976931348623157E308) versus the literal value."
+    }
+  ],
+  "mysql-118838": [
+    {
+      "id": "mysql-118838",
+      "source_db": "mysql",
+      "title": "Bug #118838 A query containing a where subclause returnning true, the query result is empty.",
+      "symptom": "wrong_result",
+      "feature": [
+        "WHERE",
+        "Comparison",
+        "Type Conversion",
+        "Float",
+        "Varchar",
+        "JOIN"
+      ],
+      "setup_sql": [
+        "DROP TABLE IF EXISTS t0;",
+        "DROP TABLE IF EXISTS t1;",
+        "CREATE TABLE t0 (c0 decimal(10,0) DEFAULT NULL, c1 float NOT NULL, PRIMARY KEY (c1), UNIQUE KEY i1 (c1));",
+        "INSERT INTO t0 VALUES (1, -1496950000), (1, 0.485855);",
+        "CREATE TABLE t1 (c0 float NOT NULL, c1 float DEFAULT NULL, c2 varchar(500) DEFAULT NULL, PRIMARY KEY (c0), UNIQUE KEY i2 (c2(3) DESC, c1));",
+        "INSERT INTO t1 VALUES (0.833634, 0.19342, '1e500');"
+      ],
+      "trigger_sql": [
+        "SELECT t0.c1, t1.c2 FROM t1, t0 WHERE (NOT ((t0.c1) \u003e= (t1.c2)));"
+      ],
+      "expected": "The query should return 2 rows: (-1496950000, '1e500') and (0.485855, '1e500'), as the condition evaluates to true when selected in the projection list.",
+      "notes": "Issue involves implicit type conversion comparison between FLOAT and VARCHAR '1e500'. The condition evaluates to true in SELECT list but filters out rows in WHERE clause."
+    }
+  ]
+}

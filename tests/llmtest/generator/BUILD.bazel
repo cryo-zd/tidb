@@ -3,15 +3,22 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "generator",
     srcs = [
+        "bugseed.go",
+        "bugseed_store.go",
+        "config.go",
         "dml.go",
         "expression.go",
         "generator.go",
+        "issuepattern.go",
         "misc.go",
+        "oracle.go",
+        "oracle_store.go",
         "prompt.go",
     ],
     importpath = "github.com/pingcap/tidb/tests/llmtest/generator",
     visibility = ["//visibility:public"],
     deps = [
+        "@com_github_go_sql_driver_mysql//:mysql",
         "//tests/llmtest/logger",
         "//tests/llmtest/testcase",
         "@com_github_openai_openai_go//:openai-go",
