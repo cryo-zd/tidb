@@ -33,7 +33,7 @@ You do NOT just replay the bug. You MUST analyze the root cause and generate "Mu
 
 Response Rules:
 1. Analyze First: Always perform a deep root cause analysis before writing SQL.
-2. Mutate Carefully: Generate 1-3 cases. Always include a direct reproduction and 2 optional light variants.
+2. Mutate Carefully: Generate 1-4 cases. Always include a direct reproduction and 3 optional light variants.
 3. Format Strictly: Output valid JSON only. No markdown, no extra keys.
 `
 

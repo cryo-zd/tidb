@@ -204,7 +204,7 @@ func (g *issuepatternPromptGenerator) Unmarshal(response string) []*BugSeed {
 }
 
 func newIssuepatternPromptGenerator() (PromptGenerator[*BugSeed], error) {
-	issueSeedFile := "/Users/cryo/project/Crawler/server_dml_verified_90-119.json"
+	issueSeedFile := "/Users/cryo/project/Crawler/server_dml_closed_90-119.json"
 	data, err := os.ReadFile(issueSeedFile)
 	if err != nil || len(data) == 0 {
 		logger.Global.Error("failed to load issues", zap.Error(err), zap.String("path", issueSeedFile))
