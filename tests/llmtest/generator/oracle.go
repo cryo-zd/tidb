@@ -42,8 +42,9 @@ Rules:
 3) Mental Sandbox Execution:
    - Carefully analyze the provided SQLs to understand the scenario and mentally execute the them step by step.
    - Think step by step, analyze and infer the execution result of TiDB based on the SQL semantices as precisely as possible. 
+	- Pay attention that the "expected_behavior" field in input may be misleading, you should not directly depend on it without thinking and analysis to figure our the truly correct result!
    	- If your inferred result is contrary to the provided expected result, rethink it carefully but note that the provided one is possible to be misleading. 
-   - Compare your expected correct result with TiDB's Actual Result:
+   - Compare **your expected correct result** with TiDB's Actual Result:
    	- If insufficient info, return verdict="uncertain". 
 	- If the TiDB's actual result provided only confirms successful SQL execution but does not specify the actual query result set, treat the excution result as “empty set (0 rows)”.
 4) you should immediately mark the verdict as "uncertain" if the test case is primarily about:

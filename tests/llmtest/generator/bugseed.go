@@ -77,13 +77,13 @@ Now, process the following input bug pattern and return only JSON output:
 {{BUG_SEED_INPUT}}
 
 Constraints & Requirements:
-1. Determinism: Each setup/trigger SQL statement should be output in one line. Avoid RAND(), NOW(), SYSDATE(), or any non-deterministic functions
+1. Determinism: Each setup/trigger SQL statement should be output in **one line**. Avoid RAND(), NOW(), SYSDATE(), or any non-deterministic functions
 2. Minimalism: For any table to be created in the setup_sql, use "DROP IF EXISTS" to drop the table if it exists. Use the smallest possible schema to reproduce the logic
 3. TiDB Compatibility (CRITICAL): You must ensure SQL syntax is compatible with MySQL 8.0! You must ensure SQL syntax is compatible with MySQL 8.0! You must ensure SQL syntax is compatible with MySQL 8.0!
 4. Mutation Strategy (CRITICAL): You must always inclde the direct reproduction case. 
 	As for the one optional light variant case, you can apply strategies including but not limited to:Type Variation, Light Syntax Variation, Edge Case Variation. 
 	You are also encouranged to create a case that differs greatly from the input in the syntax structures and used keywords, as long as you believe they are correct corresponding to the bug.
-5. Refer to the "expected" field in the input for understanding the original bug behavior in MySQL and inferring the "expected_bahavior" for each case
+5. Refer to the "expected" field in the input for understanding the original bug behavior in MySQL and carefully infer the "expected_bahavior" for each case step by step
 `
 
 type bugseedPromptGenerator struct {
