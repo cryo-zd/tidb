@@ -57,16 +57,26 @@ Model Output:
     {
       "id": "repro_int_null",
       "title": "Direct Reproduction with INT",
-      "setup_sql": ["CREATE TABLE t_repro (id INT, val INT);", "INSERT INTO t_repro VALUES (1, NULL), (1, NULL);"],
-      "trigger_sql": ["SELECT id, COUNT(val) FROM t_repro GROUP BY id ORDER BY id;"],
+      "setup_sql": [
+	  		"CREATE TABLE t_repro (id INT, val INT);", 
+			"INSERT INTO t_repro VALUES (1, NULL), (1, NULL);"
+		],
+      "trigger_sql": [
+	  		"SELECT id, COUNT(val) FROM t_repro GROUP BY id ORDER BY id;"
+		],
       "expected_behavior": "Count should be 0 for NULL values.",
       "mutation_reason": "Baseline check to see if TiDB shares the exact MySQL bug."
     },
     {
       "id": "mutate_varchar_type",
       "title": "Type Mutation: VARCHAR NULLs",
-      "setup_sql": ["CREATE TABLE t_var (id INT, val VARCHAR(10));", "INSERT INTO t_var VALUES (1, NULL), (1, '');"],
-      "trigger_sql": ["SELECT id, COUNT(val) FROM t_var GROUP BY id ORDER BY id;"],
+      "setup_sql": [
+	  		"CREATE TABLE t_var (id INT, val VARCHAR(10));", 
+			"INSERT INTO t_var VALUES (1, NULL), (1, '');"
+		],
+      "trigger_sql": [
+	  		"SELECT id, COUNT(val) FROM t_var GROUP BY id ORDER BY id;"
+		],
       "expected_behavior": "NULL count 0, Empty String count 1.",
       "mutation_reason": "Checking if string collation/encoding handling of NULLs triggers the same aggregation logic."
     }
@@ -77,13 +87,16 @@ Now, process the following input bug pattern and return only JSON output:
 {{BUG_SEED_INPUT}}
 
 Constraints & Requirements:
-1. Determinism: Each setup/trigger SQL statement should be output in **one line**. Avoid RAND(), NOW(), SYSDATE(), or any non-deterministic functions
-2. Minimalism: For any table to be created in the setup_sql, use "DROP IF EXISTS" to drop the table if it exists. Use the smallest possible schema to reproduce the logic
-3. TiDB Compatibility (CRITICAL): You must ensure SQL syntax is compatible with MySQL 8.0! You must ensure SQL syntax is compatible with MySQL 8.0! You must ensure SQL syntax is compatible with MySQL 8.0!
+1. Determinism: Each setup/trigger SQL statement should be output in one line. Avoid RAND(), NOW(), SYSDATE(), or any non-deterministic functions.
+2. Minimalism: For any table to be created in the setup_sql, use "DROP IF EXISTS" to drop the table if it exists. Use the smallest possible schema to reproduce the logic.
+3. The generated SQL statements must satisfy the following requirements (CRITICAL):
+	3.1 They must be syntactically and semantically correct.
+	3.2 They must be executable in TiDB.
+	3.3 Before output, correct any syntax or semantic errors in the generated SQL statements.
 4. Mutation Strategy (CRITICAL): You must always inclde the direct reproduction case. 
 	As for the one optional light variant case, you can apply strategies including but not limited to:Type Variation, Light Syntax Variation, Edge Case Variation. 
 	You are also encouranged to create a case that differs greatly from the input in the syntax structures and used keywords, as long as you believe they are correct corresponding to the bug.
-5. Refer to the "expected" field in the input for understanding the original bug behavior in MySQL and carefully infer the "expected_bahavior" for each case step by step
+5. Refer to the "expected" field in the input for understanding the original bug behavior in MySQL and carefully infer the "expected_bahavior" for each case step by step.
 `
 
 type bugseedPromptGenerator struct {

@@ -179,7 +179,7 @@ func (g *issuepatternPromptGenerator) Unmarshal(response string) []*BugSeed {
 	}
 
 	if !resp.Relevant {
-		logger.Global.Info("Skip one irrelevant bug issue pattern")
+		logger.Global.Info("Skip one irrelevant bug issue pattern: " + resp.RelevanceReason)
 		return nil
 	}
 
@@ -204,7 +204,7 @@ func (g *issuepatternPromptGenerator) Unmarshal(response string) []*BugSeed {
 }
 
 func newIssuepatternPromptGenerator() (PromptGenerator[*BugSeed], error) {
-	issueSeedFile := "/Users/cryo/project/Crawler/server_dml_closed_90-119.json"
+	issueSeedFile := "/Users/cryo/project/Crawler/server_ps_verified_30-59.json"
 	data, err := os.ReadFile(issueSeedFile)
 	if err != nil || len(data) == 0 {
 		logger.Global.Error("failed to load issues", zap.Error(err), zap.String("path", issueSeedFile))

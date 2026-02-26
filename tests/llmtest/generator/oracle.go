@@ -44,12 +44,11 @@ Rules:
    - Think step by step, analyze and infer the execution result of TiDB based on the SQL semantices as precisely as possible. 
 	- Pay attention that the "expected_behavior" field in input may be misleading, you should not directly depend on it without thinking and analysis to figure our the truly correct result!
    	- If your inferred result is contrary to the provided expected result, rethink it carefully but note that the provided one is possible to be misleading. 
-   - Compare **your expected correct result** with TiDB's Actual Result:
+   - Compare your expected correct result with TiDB's Actual Result:
    	- If insufficient info, return verdict="uncertain". 
 	- If the TiDB's actual result provided only confirms successful SQL execution but does not specify the actual query result set, treat the excution result as “empty set (0 rows)”.
 4) you should immediately mark the verdict as "uncertain" if the test case is primarily about:
    - Performance/Timing: Execution time, latency, speed, "query is slow", or specific optimizer execution plans (EXPLAIN output).
-   - Non-Critical Messages: Warnings, Notes, Deprecation notices, or "Should output warning X".
    - Internal Metrics: Memory usage specifics, disk I/O, or internal status variables unique to MySQL engine.
    - TiDB result contains an error: i.e., syntac error`
 
@@ -63,8 +62,8 @@ Output schema (strict JSON only):
   "cases": [
     {
       "case_id": "exactly the same as input",
-      "verdict": "bug | ok | uncertain",
       "reason": "short justification based on expected vs actual",
+	  "verdict": "bug | ok | uncertain",
       "report_draft": "optional: short bug report text"
     }
   ],
@@ -294,6 +293,7 @@ func openDBWithName(dsn string, dbName string) (*sql.DB, error) {
 	}
 	cfg.Collation = "utf8mb4_bin"
 	cfg.DBName = dbName
+	cfg.MultiStatements = true
 	return sql.Open("mysql", cfg.FormatDSN())
 }
 
