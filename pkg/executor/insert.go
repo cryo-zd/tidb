@@ -309,6 +309,18 @@ func (e *InsertExec) batchUpdateDupRows(ctx context.Context, newRows [][]types.D
 		// and key-values should be filled back to dupOldRowValues for the further row check,
 		// due to there may be duplicate keys inside the insert statement.
 		if newRows[i] != nil {
+			// Issue 66258: `INSERT IGNORE ... ON DUPLICATE KEY UPDATE ...` may go through the
+			// insert path when no duplicate key exists. For this pure insert path, only
+			// child-side FK checks should be treated as IGNORE warnings.
+			if e.ignoreErr {
+				ignored, err := checkFKIgnoreErrForInsert(ctx, e.Ctx(), e.fkChecks, newRows[i])
+				if err != nil {
+					return err
+				}
+				if ignored {
+					continue
+				}
+			}
 			err := e.addRecord(ctx, newRows[i], addRecordDupKeyCheck)
 			if err != nil {
 				return err
