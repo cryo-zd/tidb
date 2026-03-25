@@ -189,13 +189,22 @@ These are not the same as `sql_mode`, but they have the same cleanup smell: a fi
   - `t/ddl/column_type_change.test`
   - `t/expression/time.test`
   - `t/planner/core/tests/prepare/prepare.test`
+  - `t/executor/executor.test`
+  - `t/session/txn.test`
+  - `t/planner/core/integration.test`
+  - `t/planner/core/integration_partition.test`
+  - `t/planner/funcdep/only_full_group_by.test`
+- The second cleanup round above was kept deliberately narrow:
+  - restores were added at the end of the concrete case that introduced the state change;
+  - the fixes use direct `= default` cleanup rather than `@old_*` save/restore scaffolding.
 - Intentionally not fixed in the current cleanup round because the safe local boundary is unclear from static review and a naive restore is higher-risk than the hygiene gain:
   - `t/explain_generate_column_substitute.test`
   - `t/new_character_set_builtin.test`
+  - `t/planner/core/partition_pruner.test`
 - Re-check result for the "global + sql_mode" subset reviewed in this round:
   - besides the two deferred files above, I do not see additional missed leftovers from items 1 and 3-12.
 - Still-open backlog from this report:
-  - items 13-24 below were not part of the current cleanup round and remain future-work candidates.
+  - item 17 and items 19-24 below remain future-work candidates.
 
 ## Not recorded on purpose
 
@@ -214,8 +223,11 @@ These are not the same as `sql_mode`, but they have the same cleanup smell: a fi
 ## Suggested follow-up order
 
 1. Decide whether `t/explain_generate_column_substitute.test` and `t/new_character_set_builtin.test` should stay as-is or receive a higher-touch, case-by-case cleanup with targeted validation.
-2. Then fix the non-`sql_mode` environment leftovers that can silently change later plan/transaction behavior:
-   - `t/executor/executor.test`
-   - `t/session/txn.test`
-   - `t/planner/core/integration.test`
-   - `t/planner/core/integration_partition.test`
+2. Revisit `t/planner/core/partition_pruner.test` only if we are willing to do a higher-touch cleanup. The file flips `tidb_partition_prune_mode` many times, so the local safe boundary is less obvious than the files already fixed.
+3. Then consider the remaining planner/executor environment leftovers that can silently change later plan behavior:
+   - `t/explain.test`
+   - `t/index_join.test`
+   - `t/subquery.test`
+   - `t/explain_easy.test`
+   - `t/explain_easy_stats.test`
+   - `t/window_function.test`
