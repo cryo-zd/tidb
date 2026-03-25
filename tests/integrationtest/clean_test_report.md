@@ -177,6 +177,26 @@ These are not the same as `sql_mode`, but they have the same cleanup smell: a fi
     - Problem: no restore by EOF.
     - Impact: session-level execution environment is left altered for any future cases added to the file.
 
+## Follow-up Status (March 25, 2026)
+
+- Fixed in the current cleanup round:
+  - `t/session/temporary_table.test`
+  - `t/expression/builtin.test`
+  - `t/expression/misc.test`
+  - `t/new_character_set.test`
+  - `t/new_character_set_invalid.test`
+  - `t/ddl/column.test`
+  - `t/ddl/column_type_change.test`
+  - `t/expression/time.test`
+  - `t/planner/core/tests/prepare/prepare.test`
+- Intentionally not fixed in the current cleanup round because the safe local boundary is unclear from static review and a naive restore is higher-risk than the hygiene gain:
+  - `t/explain_generate_column_substitute.test`
+  - `t/new_character_set_builtin.test`
+- Re-check result for the "global + sql_mode" subset reviewed in this round:
+  - besides the two deferred files above, I do not see additional missed leftovers from items 1 and 3-12.
+- Still-open backlog from this report:
+  - items 13-24 below were not part of the current cleanup round and remain future-work candidates.
+
 ## Not recorded on purpose
 
 - I did not record cases where the `SET` itself is expected to fail, because failed statements do not leave cleanup debt.
@@ -193,13 +213,8 @@ These are not the same as `sql_mode`, but they have the same cleanup smell: a fi
 
 ## Suggested follow-up order
 
-1. Fix the global-variable leftover first:
-   - `t/session/temporary_table.test`
-2. Then fix the session `sql_mode` tail leftovers, starting with the files most likely to grow further:
-   - `t/expression/builtin.test`
-   - `t/expression/time.test`
-   - `t/ddl/column_type_change.test`
-3. Then fix the non-`sql_mode` environment leftovers that can silently change later plan/transaction behavior:
+1. Decide whether `t/explain_generate_column_substitute.test` and `t/new_character_set_builtin.test` should stay as-is or receive a higher-touch, case-by-case cleanup with targeted validation.
+2. Then fix the non-`sql_mode` environment leftovers that can silently change later plan/transaction behavior:
    - `t/executor/executor.test`
    - `t/session/txn.test`
    - `t/planner/core/integration.test`
