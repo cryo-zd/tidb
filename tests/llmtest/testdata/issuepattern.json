@@ -1,0 +1,22 @@
+{
+  "mysql-79902": [
+    {
+      "id": "mysql-79902",
+      "source_db": "mysql",
+      "title": "GREATEST and LEAST return incorrect results with BIGINT UNSIGNED values",
+      "symptom": "wrong_result",
+      "feature": [
+        "GREATEST",
+        "LEAST",
+        "BIGINT UNSIGNED"
+      ],
+      "setup_sql": [],
+      "trigger_sql": [
+        "SELECT GREATEST(9223372036854775807, 9223372036854775808);",
+        "SELECT LEAST(9223372036854775807, 9223372036854775808);"
+      ],
+      "expected": "The first query should return 9223372036854775808, and the second should return 9223372036854775807, as GREATEST returns the maximum and LEAST returns the minimum of the provided arguments. 9223372036854775808 is a valid BIGINT UNSIGNED value (2^63), larger than 9223372036854775807 (2^63-1).",
+      "notes": "Affected versions: MySQL 5.5.48, 5.6.28, 5.7.8-rc, 5.7.10. The bug likely stems from internal signed integer conversion during comparison of BIGINT UNSIGNED values."
+    }
+  ]
+}

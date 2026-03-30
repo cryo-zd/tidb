@@ -1,0 +1,44 @@
+{
+  "mysql-79902": {
+    "summary": {
+      "root_cause_groups": [
+        {
+          "group_id": "g1",
+          "case_ids": [
+            "mysql-79902:mutate_with_column_table"
+          ],
+          "relationship": "variant_failed"
+        },
+        {
+          "group_id": "g2",
+          "case_ids": [
+            "mysql-79902:repro_greatest_least_bigint_unsigned",
+            "mysql-79902:mutate_signed_unsigned_mix"
+          ],
+          "relationship": "same_root_cause"
+        }
+      ],
+      "canonical_case_id": "mysql-79902:repro_greatest_least_bigint_unsigned",
+      "minimization_hint": "Use only literal BIGINT UNSIGNED constants in GREATEST/LEAST; avoid column access in failing case.",
+      "notes": "The bug is isolated to column-based evaluation: the literal and CASTed variants work correctly, but when arguments come from BIGINT UNSIGNED columns, ordering is inverted — suggests internal comparison function misapplies sort order (e.g., uses LEAST comparator for GREATEST or vice versa) only when reading from columns."
+    },
+    "cases": [
+      {
+        "case_id": "mysql-79902:repro_greatest_least_bigint_unsigned",
+        "verdict": "ok",
+        "reason": "GREATEST returned 9223372036854775808 (2^63) and LEAST returned 9223372036854775807 (2^63-1), matching expected behavior. TiDB correctly handles unsigned 64-bit integers in GREATEST/LEAST without overflow/truncation."
+      },
+      {
+        "case_id": "mysql-79902:mutate_with_column_table",
+        "verdict": "bug",
+        "reason": "Expected GREATEST=9223372036854775808 and LEAST=9223372036854775807, but TiDB returned GREATEST=9223372036854775807 and LEAST=9223372036854775808 — exactly reversed. This indicates a bug in columnar BIGINT UNSIGNED comparison logic in GREATEST/LEAST (possibly due to misordered arguments or signed comparison being used internally).",
+        "report_draft": "In GREATEST/LEAST expressions on BIGINT UNSIGNED columns, TiDB incorrectly swaps the result values — returns GREATEST as the smaller value and LEAST as the larger. Regression likely in column-based argument handling vs literal handling."
+      },
+      {
+        "case_id": "mysql-79902:mutate_signed_unsigned_mix",
+        "verdict": "ok",
+        "reason": "GREATEST correctly returned 9223372036854775808 and LEAST returned 9223372036854775807. TiDB properly handles mixed SIGNED/UNSIGNED casting in GREATEST/LEAST, suggesting the core arithmetic logic works when operands are not column references."
+      }
+    ]
+  }
+}

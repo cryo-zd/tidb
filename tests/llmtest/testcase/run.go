@@ -15,6 +15,7 @@
 package testcase
 
 import (
+	"context"
 	"database/sql"
 	"strings"
 
@@ -22,8 +23,59 @@ import (
 	"go.uber.org/zap"
 )
 
-func executeSingleQueryInDB(db *sql.DB, query string, args ...any) ([][]string, error) {
-	dbRows, err := db.Query(query, args...)
+// StatementResult captures the execution result of a single SQL statement.
+type StatementResult struct {
+	SQL           string     `json:"sql"`
+	StatementType string     `json:"statement_type"`
+	Rows          [][]string `json:"rows,omitempty"`
+	RowCount      *int       `json:"row_count,omitempty"`
+	RowsAffected  *int64     `json:"rows_affected,omitempty"`
+	Error         string     `json:"error,omitempty"`
+}
+
+const (
+	statementTypeQuery = "query"
+	statementTypeExec  = "exec"
+)
+
+type statementExecutor interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+func isQueryStatement(query string) bool {
+	trimmed := strings.TrimSpace(query)
+	if trimmed == "" {
+		return false
+	}
+
+	lower := strings.ToLower(trimmed)
+	switch {
+	case strings.HasPrefix(lower, "select "):
+		return true
+	case strings.HasPrefix(lower, "with "):
+		return true
+	case strings.HasPrefix(lower, "show "):
+		return true
+	case strings.HasPrefix(lower, "explain "):
+		return true
+	case strings.HasPrefix(lower, "describe "):
+		return true
+	case strings.HasPrefix(lower, "desc "):
+		return true
+	case strings.HasPrefix(lower, "values "):
+		return true
+	case strings.HasPrefix(lower, "execute "):
+		return true
+	case strings.HasPrefix(lower, "call "):
+		return true
+	default:
+		return false
+	}
+}
+
+func executeSingleQueryInDB(exec statementExecutor, query string, args ...any) ([][]string, error) {
+	dbRows, err := exec.QueryContext(context.Background(), query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -68,16 +120,106 @@ func executeSingleQueryInDB(db *sql.DB, query string, args ...any) ([][]string, 
 	return queryResults, nil
 }
 
-func executeSQLsInDB(db *sql.DB, c *Case) (ret [][][]string, retErr error) {
+// executeStatementInDB is the shared low-level execution entrypoint used by both the structured oracle path and AB test path.
+func executeStatementInDB(exec statementExecutor, query string, args ...any) (string, [][]string, sql.Result, error) {
+	if isQueryStatement(query) {
+		rows, err := executeSingleQueryInDB(exec, query, args...)
+		return statementTypeQuery, rows, nil, err
+	}
+
+	execResult, err := exec.ExecContext(context.Background(), query, args...)
+	return statementTypeExec, nil, execResult, err
+}
+
+// buildStatementResult converts the shared execution result into the structured statement payload consumed by the oracle generator.
+func buildStatementResult(query string, statementType string, rows [][]string, execResult sql.Result, err error) StatementResult {
+	result := StatementResult{
+		SQL:           query,
+		StatementType: statementType,
+	}
+
+	if err != nil {
+		result.Error = err.Error()
+	}
+
+	switch statementType {
+	case statementTypeQuery:
+		rowCount := len(rows)
+		result.RowCount = &rowCount
+		if len(rows) > 0 {
+			result.Rows = rows
+		}
+	case statementTypeExec:
+		if execResult != nil {
+			rowsAffected, rowsAffectedErr := execResult.RowsAffected()
+			if rowsAffectedErr == nil {
+				result.RowsAffected = &rowsAffected
+			}
+		}
+	}
+
+	return result
+}
+
+// executeSingleStatementInDB preserves the AB test contract while reusing the shared statement execution logic above.
+func executeSingleStatementInDB(exec statementExecutor, query string, args ...any) ([][]string, error) {
+	statementType, rows, _, err := executeStatementInDB(exec, query, args...)
+	if statementType == statementTypeQuery {
+		return rows, err
+	}
+	if err != nil {
+		return nil, err
+	}
+	return [][]string{}, nil
+}
+
+func executeStatementWithMetadataInDB(exec statementExecutor, query string, args ...any) (StatementResult, error) {
+	statementType, rows, execResult, err := executeStatementInDB(exec, query, args...)
+	return buildStatementResult(query, statementType, rows, execResult, err), err
+}
+
+func executeStatements(exec statementExecutor, sqls []string, args ...any) ([]StatementResult, error) {
+	results := make([]StatementResult, 0, len(sqls))
+
+	for _, raw := range sqls {
+		query := strings.TrimSpace(raw)
+		if query == "" {
+			continue
+		}
+
+		result, err := executeStatementWithMetadataInDB(exec, query, args...)
+		if err != nil {
+			results = append(results, result)
+			return results, err
+		}
+		results = append(results, result)
+	}
+
+	return results, nil
+}
+
+// ExecuteStatements runs a list of SQL statements and returns per-statement results.
+// If any statement fails, it returns the error after recording the failure.
+func ExecuteStatements(db *sql.DB, sqls []string, args ...any) ([]StatementResult, error) {
+	return executeStatements(db, sqls, args...)
+}
+
+// ExecuteStatementsOnConn runs a list of SQL statements on a pinned connection.
+func ExecuteStatementsOnConn(conn *sql.Conn, sqls []string, args ...any) ([]StatementResult, error) {
+	return executeStatements(conn, sqls, args...)
+}
+
+func executeSQLs(exec statementExecutor, c *Case) (ret [][][]string, retErr error) {
 	allQueries := strings.Split(c.SQL, ";")
 	allResults := make([][][]string, 0, len(allQueries))
 
 	for _, query := range allQueries {
+		query = strings.TrimSpace(query)
 		if len(query) == 0 {
 			continue
 		}
 
-		queryResults, err := executeSingleQueryInDB(db, query, c.Args...)
+		queryResults, err := executeSingleStatementInDB(exec, query, c.Args...)
 		if err != nil {
 			return nil, err
 		}
@@ -85,6 +227,15 @@ func executeSQLsInDB(db *sql.DB, c *Case) (ret [][][]string, retErr error) {
 	}
 
 	return allResults, nil
+}
+
+func executeSQLsInPinnedConn(db *sql.DB, c *Case) (ret [][][]string, retErr error) {
+	conn, err := db.Conn(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	return executeSQLs(conn, c)
 }
 
 // RunABTest runs the A/B test on two databases.
@@ -105,8 +256,8 @@ func (m *Manager) RunABTest(db1 *sql.DB, db2 *sql.DB, recheckPassed bool) {
 			logger := logger.Global.With(
 				zap.String("sql", c.SQL), zap.Any("args", c.Args),
 			)
-			result1, err1 := executeSQLsInDB(db1, c)
-			result2, err2 := executeSQLsInDB(db2, c)
+			result1, err1 := executeSQLsInPinnedConn(db1, c)
+			result2, err2 := executeSQLsInPinnedConn(db2, c)
 
 			if err1 != nil || err2 != nil {
 				// all of them should fail

@@ -1,0 +1,49 @@
+{
+  "mysql-79902": [
+    {
+      "id": "repro_greatest_least_bigint_unsigned",
+      "source_db": "",
+      "title": "Direct Reproduction: GREATEST/LEAST with BIGINT UNSIGNED overflow",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [],
+      "trigger_sql": [
+        "SELECT GREATEST(9223372036854775807, 9223372036854775808);",
+        "SELECT LEAST(9223372036854775807, 9223372036854775808);"
+      ],
+      "expected": "GREATEST should return 9223372036854775808 (2^63), LEAST should return 9223372036854775807 (2^63-1). TiDB must preserve unsigned semantics and avoid signed integer truncation.",
+      "notes": ""
+    },
+    {
+      "id": "mutate_with_column_table",
+      "source_db": "",
+      "title": "Variant: GREATEST/LEAST applied to BIGINT UNSIGNED column values",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [
+        "DROP TABLE IF EXISTS t_bigint;",
+        "CREATE TABLE t_bigint (a BIGINT UNSIGNED, b BIGINT UNSIGNED);",
+        "INSERT INTO t_bigint VALUES (9223372036854775807, 9223372036854775808);"
+      ],
+      "trigger_sql": [
+        "SELECT GREATEST(a, b), LEAST(a, b) FROM t_bigint;"
+      ],
+      "expected": "GREATEST should return 9223372036854775808, LEAST should return 9223372036854775807. Tests handling of column-level BIGINT UNSIGNED comparisons in aggregation-like expressions.",
+      "notes": ""
+    },
+    {
+      "id": "mutate_signed_unsigned_mix",
+      "source_db": "",
+      "title": "Variant: Mixed signed/unsigned argument handling",
+      "symptom": "",
+      "feature": null,
+      "setup_sql": [],
+      "trigger_sql": [
+        "SELECT GREATEST(CAST(9223372036854775807 AS SIGNED), CAST(9223372036854775808 AS UNSIGNED));",
+        "SELECT LEAST(CAST(9223372036854775807 AS SIGNED), CAST(9223372036854775808 AS UNSIGNED));"
+      ],
+      "expected": "GREATEST returns 9223372036854775808, LEAST returns 9223372036854775807. Verifies that cross-type promotion preserves correctness and avoids sign misinterpretation.",
+      "notes": "Tests internal type coercion behavior when mixing SIGNED/UNSIGNED, exposing potential signed-integer fallback in GREATEST/LEAST evaluation."
+    }
+  ]
+}

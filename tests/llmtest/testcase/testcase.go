@@ -97,8 +97,11 @@ func (m *Manager) Save() error {
 	return nil
 }
 
-// AppendCase appends a test case to the manager.
-func (m *Manager) AppendCase(group string, c Case) {
+// Append appends a test case to the manager.
+func (m *Manager) Append(group string, c *Case) {
+	if c == nil {
+		return
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -106,11 +109,11 @@ func (m *Manager) AppendCase(group string, c Case) {
 		m.cases[group] = make([]*Case, 0)
 	}
 
-	m.cases[group] = append(m.cases[group], &c)
+	m.cases[group] = append(m.cases[group], c)
 }
 
-// ExistCases returns the test cases in a group.
-func (m *Manager) ExistCases(group string) []*Case {
+// Exist returns the test cases in a group.
+func (m *Manager) Exist(group string) []*Case {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 

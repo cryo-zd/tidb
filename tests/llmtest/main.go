@@ -48,33 +48,29 @@ func createGenerateCmd() *cobra.Command {
 		promptGeneratorName string
 		testCount           int
 		generateParallism   int
+		issueSeedFile       string
+		tidbDSN             string
 	)
 
 	var generateCmd = &cobra.Command{
 		Use:   "generate",
 		Short: "Generate something using OpenAI",
 		Run: func(cmd *cobra.Command, args []string) {
+			if tidbDSN != "" {
+				generator.SetTiDBDSN(tidbDSN)
+			}
+			if issueSeedFile != "" {
+				generator.SetIssueSeedFile(issueSeedFile)
+			}
+
 			promptGenerator := generator.GetPromptGenerator(promptGeneratorName)
 			if promptGenerator == nil {
 				logger.Global.Info("Unknown prompt generator", zap.String("name", promptGeneratorName))
 				os.Exit(1)
 			}
 
-			caseManager, err := testcase.Open("testdata/" + promptGeneratorName + ".json")
-			if err != nil {
-				logger.Global.Error("Failed to open test case", zap.Error(err))
-				os.Exit(1)
-			}
-
-			caseGenerator := generator.New(
-				caseManager, generateParallism,
-				openaiToken, openaiBaseURL, openaiModel, promptGenerator, testCount)
-			caseGenerator.Run()
-			caseGenerator.Wait()
-
-			err = caseManager.Save()
-			if err != nil {
-				logger.Global.Error("Failed to save test case", zap.Error(err))
+			if err := promptGenerator.Run(openaiToken, openaiBaseURL, openaiModel, testCount, generateParallism); err != nil {
+				logger.Global.Error("Failed to generate outputs", zap.Error(err))
 				os.Exit(1)
 			}
 		},
@@ -86,6 +82,9 @@ func createGenerateCmd() *cobra.Command {
 	generateCmd.Flags().StringVar(&promptGeneratorName, "prompt_generator", "", "Prompt generator")
 	generateCmd.Flags().IntVar(&testCount, "test_count", 0, "Test count")
 	generateCmd.Flags().IntVar(&generateParallism, "parallel", 20, "Generate parallism")
+	generateCmd.Flags().StringVar(&issueSeedFile, "issue_seed_file", "", "Input issue seed JSON file for the issuepattern generator")
+	generateCmd.Flags().StringVar(&tidbDSN, "tidb_dsn", "", "TiDB DSN (required for generators that execute SQL)")
+
 	return generateCmd
 }
 

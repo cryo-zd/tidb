@@ -32,6 +32,16 @@ func (g *miscPromptGenerator) Name() string {
 	return "misc"
 }
 
+// Kind implements PromptGenerator.Kind.
+func (g *miscPromptGenerator) Kind() GeneratorKind {
+	return GeneratorKindTestcase
+}
+
+// OneShotPerGroup implements PromptGenerator.OneShotPerGroup.
+func (g *miscPromptGenerator) OneShotPerGroup() bool {
+	return false
+}
+
 // Groups implements PromptGenerator.Groups
 func (g *miscPromptGenerator) Groups() []string {
 	return []string{
@@ -79,7 +89,7 @@ func (g *miscPromptGenerator) GeneratePrompt(group string, count int, existCases
 }
 
 // Unmarshal implements PromptGenerator.Unmarshal
-func (g *miscPromptGenerator) Unmarshal(response string) []testcase.Case {
+func (g *miscPromptGenerator) Unmarshal(response string) []*testcase.Case {
 	var resp simplePromptResponse
 	err := json.Unmarshal([]byte(response), &resp)
 	if err != nil {
@@ -87,9 +97,9 @@ func (g *miscPromptGenerator) Unmarshal(response string) []testcase.Case {
 		return nil
 	}
 
-	cases := make([]testcase.Case, 0, len(resp.Queries))
+	cases := make([]*testcase.Case, 0, len(resp.Queries))
 	for _, q := range resp.Queries {
-		cases = append(cases, testcase.Case{
+		cases = append(cases, &testcase.Case{
 			SQL: q,
 		})
 	}
@@ -98,5 +108,7 @@ func (g *miscPromptGenerator) Unmarshal(response string) []testcase.Case {
 }
 
 func init() {
-	registerPromptGenerator(&miscPromptGenerator{})
+	registerGenerator("misc", GeneratorKindTestcase, func() (PromptGenerator[*testcase.Case], error) {
+		return &miscPromptGenerator{}, nil
+	}, testcaseStore)
 }

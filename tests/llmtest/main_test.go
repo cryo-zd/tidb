@@ -25,7 +25,7 @@ import (
 // TestAllTestCaseInGroup ensures that all test cases recorded in the testdata directory belongs
 // to a group of the corresponding generator.
 func TestAllTestCaseInGroup(t *testing.T) {
-	promptGenerators := generator.AllPromptGenerators()
+	promptGenerators := generator.AllTestcaseGenerators()
 
 	for _, g := range promptGenerators {
 		name := g.Name()
@@ -45,7 +45,7 @@ func TestAllTestCaseInGroup(t *testing.T) {
 }
 
 func TestAllTestCasePassOrKnown(t *testing.T) {
-	promptGenerators := generator.AllPromptGenerators()
+	promptGenerators := generator.AllTestcaseGenerators()
 
 	for _, g := range promptGenerators {
 		name := g.Name()
@@ -53,7 +53,7 @@ func TestAllTestCasePassOrKnown(t *testing.T) {
 		require.NoError(t, err)
 
 		for _, group := range caseManager.AllGroups() {
-			cases := caseManager.ExistCases(group)
+			cases := caseManager.Exist(group)
 			for _, c := range cases {
 				require.True(t, c.Pass || c.Known, "case %s in group %s is not pass or known", c.SQL, group)
 			}
