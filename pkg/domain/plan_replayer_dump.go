@@ -33,13 +33,16 @@ import (
 	domain_metrics "github.com/pingcap/tidb/pkg/domain/metrics"
 	"github.com/pingcap/tidb/pkg/infoschema"
 	"github.com/pingcap/tidb/pkg/parser/ast"
+	"github.com/pingcap/tidb/pkg/parser/terror"
 	"github.com/pingcap/tidb/pkg/planner/extstore"
+	"github.com/pingcap/tidb/pkg/privilege"
 	"github.com/pingcap/tidb/pkg/sessionctx"
 	"github.com/pingcap/tidb/pkg/sessionctx/vardef"
 	"github.com/pingcap/tidb/pkg/sessionctx/variable"
 	"github.com/pingcap/tidb/pkg/statistics"
 	"github.com/pingcap/tidb/pkg/statistics/util"
 	"github.com/pingcap/tidb/pkg/util/chunk"
+	"github.com/pingcap/tidb/pkg/util/dbterror/plannererrors"
 	"github.com/pingcap/tidb/pkg/util/logutil"
 	"github.com/pingcap/tidb/pkg/util/printer"
 	"github.com/pingcap/tidb/pkg/util/replayer"
@@ -316,7 +319,7 @@ func DumpPlanReplayerInfo(ctx context.Context, sctx sessionctx.Context,
 	}
 
 	// Dump Schema and View
-	if err = dumpSchemas(sctx, zw, pairs); err != nil {
+	if err = dumpSchemasWithTask(sctx, zw, task, pairs); err != nil {
 		return err
 	}
 
@@ -516,9 +519,13 @@ func dumpTiFlashReplica(sctx sessionctx.Context, zw *zip.Writer, pairs map[table
 }
 
 func dumpSchemas(ctx sessionctx.Context, zw *zip.Writer, pairs map[tableNamePair]struct{}) error {
+	return dumpSchemasWithTask(ctx, zw, nil, pairs)
+}
+
+func dumpSchemasWithTask(ctx sessionctx.Context, zw *zip.Writer, task *PlanReplayerDumpTask, pairs map[tableNamePair]struct{}) error {
 	tables := make(map[tableNamePair]struct{})
 	for pair := range pairs {
-		err := getShowCreateTable(pair, zw, ctx)
+		err := getShowCreateTable(pair, zw, ctx, task)
 		if err != nil {
 			return err
 		}
@@ -527,6 +534,67 @@ func dumpSchemas(ctx sessionctx.Context, zw *zip.Writer, pairs map[tableNamePair
 		}
 	}
 	return dumpSchemaMeta(zw, tables)
+}
+
+type planReplayerExplainAdminStmtChecker struct {
+	valid bool
+}
+
+func (v *planReplayerExplainAdminStmtChecker) Enter(n ast.Node) (ast.Node, bool) {
+	if !v.valid {
+		return n, true
+	}
+	if stmt, ok := n.(*ast.SelectStmt); ok && stmt.Kind != ast.SelectStmtKindSelect {
+		v.valid = false
+		return n, true
+	}
+	return n, false
+}
+
+func (v *planReplayerExplainAdminStmtChecker) Leave(n ast.Node) (ast.Node, bool) {
+	return n, v.valid
+}
+
+func isPlanReplayerExplainAdminStmt(stmt ast.StmtNode) bool {
+	switch stmt.(type) {
+	case *ast.SelectStmt, *ast.SetOprStmt:
+	default:
+		return false
+	}
+	checker := &planReplayerExplainAdminStmtChecker{valid: true}
+	_, ok := stmt.Accept(checker)
+	return ok && checker.valid
+}
+
+func shouldUsePlanReplayerExplainAdminBypass(sctx sessionctx.Context, task *PlanReplayerDumpTask) bool {
+	if task == nil || task.Analyze {
+		return false
+	}
+	// Bypass is decided for the whole dump task because schema extraction uses the task-wide statement set.
+	// Mixing bypassable and non-bypassable statements would otherwise let SHOW CREATE run for objects collected
+	// from statements that are not allowed to use PLAN_REPLAYER_EXPLAIN_ADMIN.
+	for _, stmt := range task.ExecStmts {
+		if !isPlanReplayerExplainAdminStmt(stmt) {
+			return false
+		}
+	}
+	pm := privilege.GetPrivilegeManager(sctx)
+	if pm == nil {
+		return false
+	}
+	return pm.RequestDynamicVerification(sctx.GetSessionVars().ActiveRoles, "PLAN_REPLAYER_EXPLAIN_ADMIN", false)
+}
+
+// Temporarily mark the current helper SQL type so privilege checks can apply the matching narrow bypass rules.
+func runWithPlanReplayerSQLPrivilegeType(sctx sessionctx.Context, sqlType variable.PlanReplayerInternalSQLType, fn func() error) error {
+	restore := sctx.GetSessionVars().SetPlanReplayerSQLPrivilegeType(sqlType)
+	defer sctx.GetSessionVars().SetPlanReplayerSQLPrivilegeType(restore)
+	return fn()
+}
+
+func isPlanReplayerExplainAdminPrivilegeError(err error) bool {
+	return terror.ErrorEqual(err, plannererrors.ErrTableaccessDenied) ||
+		terror.ErrorEqual(err, plannererrors.ErrViewNoExplain)
 }
 
 func dumpSchemaMeta(zw *zip.Writer, tables map[tableNamePair]struct{}) error {
@@ -748,25 +816,30 @@ func dumpEncodedPlan(ctx sessionctx.Context, zw *zip.Writer, encodedPlan string)
 	return nil
 }
 
-func dumpExplain(ctx sessionctx.Context, zw *zip.Writer, isAnalyze bool, sqls []string, emptyAsNil bool) (debugTraces []any, err error) {
+func dumpExplain(ctx sessionctx.Context, zw *zip.Writer, task *PlanReplayerDumpTask, emptyAsNil bool) (debugTraces []any, err error) {
 	ctx.GetSessionVars().InPlanReplayer = true
 	defer func() {
 		ctx.GetSessionVars().InPlanReplayer = false
 	}()
 
 	// If there are multiple SQLs, write separate explain files
-	useSeparateFiles := len(sqls) > 1
+	useSeparateFiles := len(task.ExecStmts) > 1
 
 	// For single SQL, create explain.txt once before the loop
 	var fw io.Writer
-	if !useSeparateFiles && len(sqls) > 0 {
+	if !useSeparateFiles && len(task.ExecStmts) > 0 {
 		fw, err = zw.Create("explain.txt")
 		if err != nil {
 			return nil, errors.AddStack(err)
 		}
 	}
 
-	for i, sql := range sqls {
+	for i, execStmt := range task.ExecStmts {
+		sql := execStmt.Text()
+		explainSQL := fmt.Sprintf("explain %s", sql)
+		if task.Analyze {
+			explainSQL = fmt.Sprintf("explain analyze %s", sql)
+		}
 		// For multiple SQLs, create a separate file for each
 		if useSeparateFiles {
 			fw, err = zw.Create(fmt.Sprintf("explain/explain%v.txt", i))
@@ -776,18 +849,28 @@ func dumpExplain(ctx sessionctx.Context, zw *zip.Writer, isAnalyze bool, sqls []
 		}
 
 		var recordSets []sqlexec.RecordSet
-		if isAnalyze {
-			// Explain analyze
-			recordSets, err = ctx.GetSQLExecutor().Execute(context.Background(), fmt.Sprintf("explain analyze %s", sql))
-			if err != nil {
-				return nil, err
+		recordSets, err = ctx.GetSQLExecutor().Execute(context.Background(), explainSQL)
+		if err != nil && !task.Analyze && isPlanReplayerExplainAdminPrivilegeError(err) && shouldUsePlanReplayerExplainAdminBypass(ctx, task) {
+			originalErr := err
+			restoreExplainNonEvaledSubQuery := ctx.GetSessionVars().ExplainNonEvaledSubQuery
+			// Keep the bypass retry from materializing scalar subquery values into explain output.
+			if restoreExplainNonEvaledSubQuery {
+				ctx.GetSessionVars().ExplainNonEvaledSubQuery = false
 			}
-		} else {
-			// Explain
-			recordSets, err = ctx.GetSQLExecutor().Execute(context.Background(), fmt.Sprintf("explain %s", sql))
-			if err != nil {
-				return nil, err
+			retryErr := runWithPlanReplayerSQLPrivilegeType(ctx, variable.PlanReplayerInternalSQLTypeExplain, func() error {
+				recordSets, err = ctx.GetSQLExecutor().Execute(context.Background(), explainSQL)
+				return err
+			})
+			if restoreExplainNonEvaledSubQuery {
+				ctx.GetSessionVars().ExplainNonEvaledSubQuery = true
 			}
+			if retryErr != nil {
+				return nil, originalErr
+			}
+			err = nil
+		}
+		if err != nil {
+			return nil, err
 		}
 		sRows, err := resultSetToStringSlice(context.Background(), recordSets[0], emptyAsNil)
 		if err != nil {
@@ -803,7 +886,7 @@ func dumpExplain(ctx sessionctx.Context, zw *zip.Writer, isAnalyze bool, sqls []
 		}
 
 		// For single SQL, add separator between multiple explains in the same file
-		if !useSeparateFiles && i < len(sqls)-1 {
+		if !useSeparateFiles && i < len(task.ExecStmts)-1 {
 			fmt.Fprintf(fw, "<--------->\n")
 		}
 	}
@@ -821,7 +904,7 @@ func dumpPlanReplayerExplain(ctx context.Context, sctx sessionctx.Context, zw *z
 			Token:     task.FileName,
 		})
 	}
-	debugTraces, err := dumpExplain(sctx, zw, task.Analyze, sqls, false)
+	debugTraces, err := dumpExplain(sctx, zw, task, false)
 	task.DebugTrace = debugTraces
 	return err
 }
@@ -861,8 +944,26 @@ func getStatsForTable(do *Domain, pair tableNamePair, historyStatsTS uint64) (*u
 	return jt, nil, err
 }
 
-func getShowCreateTable(pair tableNamePair, zw *zip.Writer, ctx sessionctx.Context) error {
-	recordSets, err := ctx.GetSQLExecutor().Execute(context.Background(), fmt.Sprintf("show create table `%v`.`%v`", pair.DBName, pair.TableName))
+func getShowCreateTable(pair tableNamePair, zw *zip.Writer, ctx sessionctx.Context, task *PlanReplayerDumpTask) error {
+	var recordSets []sqlexec.RecordSet
+	var err error
+	execShowCreate := func() error {
+		recordSets, err = ctx.GetSQLExecutor().Execute(context.Background(), fmt.Sprintf("show create table `%v`.`%v`", pair.DBName, pair.TableName))
+		return err
+	}
+	err = execShowCreate()
+	if err != nil && isPlanReplayerExplainAdminPrivilegeError(err) && shouldUsePlanReplayerExplainAdminBypass(ctx, task) {
+		originalErr := err
+		sqlType := variable.PlanReplayerInternalSQLTypeShowCreateTable
+		if pair.IsView {
+			sqlType = variable.PlanReplayerInternalSQLTypeShowCreateView
+		}
+		retryErr := runWithPlanReplayerSQLPrivilegeType(ctx, sqlType, execShowCreate)
+		if retryErr != nil {
+			return originalErr
+		}
+		err = nil
+	}
 	if err != nil {
 		return err
 	}

@@ -78,6 +78,7 @@ var dynamicPrivs = []string{
 	"RESOURCE_GROUP_USER",             // Can change the resource group of current session.
 	"TRAFFIC_CAPTURE_ADMIN",           // Can capture traffic
 	"TRAFFIC_REPLAY_ADMIN",            // Can replay traffic
+	"PLAN_REPLAYER_EXPLAIN_ADMIN",     // Can run plan replayer explain helpers without table read privileges
 }
 var dynamicPrivLock sync.Mutex
 var defaultTokenLife = 15 * time.Minute
@@ -90,6 +91,7 @@ type UserPrivileges struct {
 	*Handle
 	extensionAccessCheckFuncs []extension.AccessCheckFunc
 	authPlugins               map[string]*extension.AuthPlugin
+	sessionVars               *variable.SessionVars
 
 	authPluginRequestVerification        func(user, host string, activeRoles []*auth.RoleIdentity, db, table, column string, priv mysql.PrivilegeType) bool
 	authPluginRequestDynamicVerification func(activeRoles []*auth.RoleIdentity, user, host, privName string, grantable bool) bool
@@ -102,6 +104,11 @@ func NewUserPrivileges(handle *Handle, extension *extension.Extensions) *UserPri
 		extensionAccessCheckFuncs: extension.GetAccessCheckFuncs(),
 		authPlugins:               extension.GetAuthPlugins(),
 	}
+}
+
+// SetSessionVars wires the current session into the privilege manager.
+func (p *UserPrivileges) SetSessionVars(sessionVars *variable.SessionVars) {
+	p.sessionVars = sessionVars
 }
 
 // RequestDynamicVerificationWithUser implements the Manager interface.
@@ -207,10 +214,31 @@ func (p *UserPrivileges) RequestVerification(activeRoles []*auth.RoleIdentity, d
 	}
 
 	mysqlPriv := p.Handle.Get()
-	if !mysqlPriv.RequestVerification(activeRoles, p.user, p.host, db, table, column, priv) {
+	if !mysqlPriv.RequestVerification(activeRoles, p.user, p.host, db, table, column, priv) && !p.canBypassPlanReplayerPrivilege(activeRoles, priv) {
 		return false
 	}
 	return p.authPluginRequestVerification == nil || p.authPluginRequestVerification(p.user, p.host, activeRoles, db, table, column, priv)
+}
+
+// Only exact privilege patterns emitted by the current helper SQL shapes are allowed through this branch.
+func (p *UserPrivileges) canBypassPlanReplayerPrivilege(activeRoles []*auth.RoleIdentity, priv mysql.PrivilegeType) bool {
+	if p.sessionVars == nil {
+		return false
+	}
+	sqlType := p.sessionVars.GetPlanReplayerSQLPrivilegeType()
+	if sqlType == variable.PlanReplayerInternalSQLTypeNone || !p.RequestDynamicVerification(activeRoles, "PLAN_REPLAYER_EXPLAIN_ADMIN", false) {
+		return false
+	}
+	switch sqlType {
+	case variable.PlanReplayerInternalSQLTypeExplain:
+		return priv == mysql.SelectPriv || priv == mysql.ShowViewPriv
+	case variable.PlanReplayerInternalSQLTypeShowCreateTable:
+		return priv == mysql.AllPrivMask || priv == mysql.AllPrivMask&(^mysql.CreateTMPTablePriv)
+	case variable.PlanReplayerInternalSQLTypeShowCreateView:
+		return priv == mysql.ShowViewPriv
+	default:
+		return false
+	}
 }
 
 // RequestVerificationWithUser implements the Manager interface.
