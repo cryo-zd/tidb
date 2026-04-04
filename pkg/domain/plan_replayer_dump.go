@@ -544,9 +544,13 @@ func (v *planReplayerExplainAdminStmtChecker) Enter(n ast.Node) (ast.Node, bool)
 	if !v.valid {
 		return n, true
 	}
-	if stmt, ok := n.(*ast.SelectStmt); ok && stmt.Kind != ast.SelectStmtKindSelect {
-		v.valid = false
-		return n, true
+	if stmt, ok := n.(*ast.SelectStmt); ok {
+		// Only plain read-only SELECT query blocks are allowed through this bypass path.
+		if stmt.Kind != ast.SelectStmtKindSelect || stmt.SelectIntoOpt != nil ||
+			(stmt.LockInfo != nil && stmt.LockInfo.LockType != ast.SelectLockNone) {
+			v.valid = false
+			return n, true
+		}
 	}
 	return n, false
 }

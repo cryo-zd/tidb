@@ -217,6 +217,8 @@ func TestShouldUsePlanReplayerExplainAdminBypass(t *testing.T) {
 	disallowedSQLs := []string{
 		"table t",
 		"values row(1)",
+		"select * from t for update",
+		"select * FROM t into outfile '/tmp/tmp_file1';",
 		"select * from t1 union values row(2)",
 		"select * from (table t) dt",
 		"with c as (values row(1)) select * from c",
