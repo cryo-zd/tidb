@@ -33,7 +33,7 @@ After this change, TiDB can grant a dedicated dynamic privilege, `PLAN_REPLAYER_
   Date/Author: 2026-04-01 / Codex
 
 - Decision: Gate the bypass at the privilege manager, but only enable the context from plan replayer's internal helper SQL wrappers.
-  Rationale: this keeps normal SQL behavior unchanged while still covering both `EXPLAIN` and `SHOW CREATE` code paths, including view expansion. The bypass now acts only as a fallback after the built-in object privilege check fails, and auth-plugin static privilege checks still apply. For `EXPLAIN`, the privilege matcher accepts only a tiny read-only subset of bits so built-in rewrites like `SELECT|PROCESS` on `metrics_schema` still work.
+  Rationale: this keeps normal SQL behavior unchanged while still covering both `EXPLAIN` and `SHOW CREATE` code paths, including view expansion. The bypass now acts only as a fallback after the built-in object privilege check fails. Auth-plugin static privilege checks continue to apply on the normal path, while bypass-rescued requests rely on the dynamic-privilege plugin hook for `PLAN_REPLAYER_EXPLAIN_ADMIN`. For `EXPLAIN`, the privilege matcher accepts only a tiny read-only subset of bits so built-in rewrites like `SELECT|PROCESS` on `metrics_schema` still work.
   Date/Author: 2026-04-01 / Codex
 
 - Decision: Support file-input mode with the same task-wide allowlist as inline and statement-list inputs.
