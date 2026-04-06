@@ -590,10 +590,10 @@ func shouldUsePlanReplayerExplainAdminBypass(sctx sessionctx.Context, task *Plan
 }
 
 // Temporarily mark the current helper SQL type so privilege checks can apply the matching narrow bypass rules.
-func runWithPlanReplayerSQLPrivilegeType(sctx sessionctx.Context, sqlType variable.PlanReplayerInternalSQLType, fn func() error) error {
+func runWithPlanReplayerSQLPrivilegeType(sctx sessionctx.Context, sqlType variable.PlanReplayerInternalSQLType, fn func()) {
 	restore := sctx.GetSessionVars().SetPlanReplayerSQLPrivilegeType(sqlType)
 	defer sctx.GetSessionVars().SetPlanReplayerSQLPrivilegeType(restore)
-	return fn()
+	fn()
 }
 
 func isPlanReplayerExplainAdminPrivilegeError(err error) bool {
@@ -855,23 +855,17 @@ func dumpExplain(ctx sessionctx.Context, zw *zip.Writer, task *PlanReplayerDumpT
 		var recordSets []sqlexec.RecordSet
 		recordSets, err = ctx.GetSQLExecutor().Execute(context.Background(), explainSQL)
 		if err != nil && !task.Analyze && isPlanReplayerExplainAdminPrivilegeError(err) && shouldUsePlanReplayerExplainAdminBypass(ctx, task) {
-			originalErr := err
 			restoreExplainNonEvaledSubQuery := ctx.GetSessionVars().ExplainNonEvaledSubQuery
 			// Keep the bypass retry from materializing scalar subquery values into explain output.
 			if restoreExplainNonEvaledSubQuery {
 				ctx.GetSessionVars().ExplainNonEvaledSubQuery = false
 			}
-			retryErr := runWithPlanReplayerSQLPrivilegeType(ctx, variable.PlanReplayerInternalSQLTypeExplain, func() error {
+			runWithPlanReplayerSQLPrivilegeType(ctx, variable.PlanReplayerInternalSQLTypeExplain, func() {
 				recordSets, err = ctx.GetSQLExecutor().Execute(context.Background(), explainSQL)
-				return err
 			})
 			if restoreExplainNonEvaledSubQuery {
 				ctx.GetSessionVars().ExplainNonEvaledSubQuery = true
 			}
-			if retryErr != nil {
-				return nil, originalErr
-			}
-			err = nil
 		}
 		if err != nil {
 			return nil, err
@@ -949,22 +943,16 @@ func getStatsForTable(do *Domain, pair tableNamePair, historyStatsTS uint64) (*u
 func getShowCreateTable(pair tableNamePair, zw *zip.Writer, ctx sessionctx.Context, task *PlanReplayerDumpTask) error {
 	var recordSets []sqlexec.RecordSet
 	var err error
-	execShowCreate := func() error {
+	execShowCreate := func() {
 		recordSets, err = ctx.GetSQLExecutor().Execute(context.Background(), fmt.Sprintf("show create table `%v`.`%v`", pair.DBName, pair.TableName))
-		return err
 	}
-	err = execShowCreate()
+	execShowCreate()
 	if err != nil && isPlanReplayerExplainAdminPrivilegeError(err) && shouldUsePlanReplayerExplainAdminBypass(ctx, task) {
-		originalErr := err
 		sqlType := variable.PlanReplayerInternalSQLTypeShowCreateTable
 		if pair.IsView {
 			sqlType = variable.PlanReplayerInternalSQLTypeShowCreateView
 		}
-		retryErr := runWithPlanReplayerSQLPrivilegeType(ctx, sqlType, execShowCreate)
-		if retryErr != nil {
-			return originalErr
-		}
-		err = nil
+		runWithPlanReplayerSQLPrivilegeType(ctx, sqlType, execShowCreate)
 	}
 	if err != nil {
 		return err
