@@ -214,32 +214,22 @@ func (p *UserPrivileges) RequestVerification(activeRoles []*auth.RoleIdentity, d
 	}
 
 	mysqlPriv := p.Handle.Get()
-	if !mysqlPriv.RequestVerification(activeRoles, p.user, p.host, db, table, column, priv) && !p.canBypassPlanReplayerPrivilege(activeRoles, priv) {
+	if !mysqlPriv.RequestVerification(activeRoles, p.user, p.host, db, table, column, priv) && !p.canBypassPlanReplayerPrivilege(activeRoles) {
 		return false
 	}
 	return p.authPluginRequestVerification == nil || p.authPluginRequestVerification(p.user, p.host, activeRoles, db, table, column, priv)
 }
 
-// Only the privilege shapes emitted by the current helper SQL paths are allowed through this branch.
-func (p *UserPrivileges) canBypassPlanReplayerPrivilege(activeRoles []*auth.RoleIdentity, priv mysql.PrivilegeType) bool {
-	if p.sessionVars == nil {
+func (p *UserPrivileges) canBypassPlanReplayerPrivilege(activeRoles []*auth.RoleIdentity) bool {
+	if p.sessionVars == nil || !p.RequestDynamicVerification(activeRoles, "PLAN_REPLAYER_EXPLAIN_ADMIN", false) {
 		return false
 	}
-	sqlType := p.sessionVars.GetPlanReplayerSQLPrivilegeType()
-	if sqlType == variable.PlanReplayerInternalSQLTypeNone || !p.RequestDynamicVerification(activeRoles, "PLAN_REPLAYER_EXPLAIN_ADMIN", false) {
-		return false
-	}
-	switch sqlType {
-	case variable.PlanReplayerInternalSQLTypeExplain:
-		allowed := mysql.SelectPriv | mysql.ProcessPriv | mysql.ShowViewPriv
-		if priv == 0 || priv&^allowed != 0 {
-			return false
-		}
+
+	switch p.sessionVars.GetPlanReplayerSQLPrivilegeType() {
+	case variable.PlanReplayerInternalSQLTypeExplain,
+		variable.PlanReplayerInternalSQLTypeShowCreateTable,
+		variable.PlanReplayerInternalSQLTypeShowCreateView:
 		return true
-	case variable.PlanReplayerInternalSQLTypeShowCreateTable:
-		return priv == mysql.AllPrivMask || priv == mysql.AllPrivMask&(^mysql.CreateTMPTablePriv)
-	case variable.PlanReplayerInternalSQLTypeShowCreateView:
-		return priv == mysql.ShowViewPriv
 	default:
 		return false
 	}
