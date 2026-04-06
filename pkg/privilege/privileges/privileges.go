@@ -220,7 +220,7 @@ func (p *UserPrivileges) RequestVerification(activeRoles []*auth.RoleIdentity, d
 	return p.authPluginRequestVerification == nil || p.authPluginRequestVerification(p.user, p.host, activeRoles, db, table, column, priv)
 }
 
-// Only exact privilege patterns emitted by the current helper SQL shapes are allowed through this branch.
+// Only the privilege shapes emitted by the current helper SQL paths are allowed through this branch.
 func (p *UserPrivileges) canBypassPlanReplayerPrivilege(activeRoles []*auth.RoleIdentity, priv mysql.PrivilegeType) bool {
 	if p.sessionVars == nil {
 		return false
@@ -231,7 +231,11 @@ func (p *UserPrivileges) canBypassPlanReplayerPrivilege(activeRoles []*auth.Role
 	}
 	switch sqlType {
 	case variable.PlanReplayerInternalSQLTypeExplain:
-		return priv == mysql.SelectPriv || priv == mysql.ShowViewPriv
+		allowed := mysql.SelectPriv | mysql.ProcessPriv | mysql.ShowViewPriv
+		if priv == 0 || priv&^allowed != 0 {
+			return false
+		}
+		return true
 	case variable.PlanReplayerInternalSQLTypeShowCreateTable:
 		return priv == mysql.AllPrivMask || priv == mysql.AllPrivMask&(^mysql.CreateTMPTablePriv)
 	case variable.PlanReplayerInternalSQLTypeShowCreateView:
