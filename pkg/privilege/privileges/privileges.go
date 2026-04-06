@@ -214,8 +214,12 @@ func (p *UserPrivileges) RequestVerification(activeRoles []*auth.RoleIdentity, d
 	}
 
 	mysqlPriv := p.Handle.Get()
-	if mysqlPriv.RequestVerification(activeRoles, p.user, p.host, db, table, column, priv) {
-		return p.authPluginRequestVerification == nil || p.authPluginRequestVerification(p.user, p.host, activeRoles, db, table, column, priv)
+	staticGranted := mysqlPriv.RequestVerification(activeRoles, p.user, p.host, db, table, column, priv)
+	if staticGranted && p.authPluginRequestVerification != nil {
+		staticGranted = p.authPluginRequestVerification(p.user, p.host, activeRoles, db, table, column, priv)
+	}
+	if staticGranted {
+		return true
 	}
 	return p.canBypassPlanReplayerPrivilege(activeRoles)
 }
