@@ -899,10 +899,8 @@ func dumpExplain(ctx sessionctx.Context, zw *zip.Writer, task *PlanReplayerDumpT
 
 func dumpPlanReplayerExplain(ctx context.Context, sctx sessionctx.Context, zw *zip.Writer, task *PlanReplayerDumpTask, records *[]PlanReplayerStatusRecord) error {
 	setTaskPresignedURL(ctx, task)
-	sqls := make([]string, 0)
 	for _, execStmt := range task.ExecStmts {
 		sql := execStmt.Text()
-		sqls = append(sqls, sql)
 		*records = append(*records, PlanReplayerStatusRecord{
 			OriginSQL: sql,
 			Token:     task.FileName,
