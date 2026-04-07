@@ -11,7 +11,7 @@ After this change, TiDB can grant a dedicated dynamic privilege, `PLAN_REPLAYER_
 ## Progress
 
 - [x] (2026-04-01 13:20 +08:00) Located the real privilege enforcement points in the plan replayer dump path and confirmed that the outer `PLAN REPLAYER` statement does not pre-check inner SQL object privileges.
-- [x] (2026-04-01 14:05 +08:00) Added the session-scoped internal privilege context and wired it into the bound privilege manager.
+- [x] (2026-04-01 14:05 +08:00) Added the session-scoped internal privilege context and initially wired it into the bound privilege manager.
 - [x] (2026-04-01 14:20 +08:00) Registered the new dynamic privilege and wrapped the internal `EXPLAIN` / `SHOW CREATE` execution points.
 - [x] (2026-04-02 11:30 +08:00) Simplified the session state from a struct to a single enum and documented why bypass is decided at task granularity.
 - [x] (2026-04-02 12:05 +08:00) Renamed the helper to match the enum-based state and simplified `ExplainNonEvaledSubQuery` switching to only toggle when needed.
@@ -32,8 +32,8 @@ After this change, TiDB can grant a dedicated dynamic privilege, `PLAN_REPLAYER_
   Rationale: this preserves existing-user behavior while still letting the new dynamic privilege rescue privilege failures for the intended read-only helper SQL shapes.
   Date/Author: 2026-04-01 / Codex
 
-- Decision: Gate the bypass at the privilege manager, but only enable the context from plan replayer's internal helper SQL wrappers.
-  Rationale: this keeps normal SQL behavior unchanged while still covering both `EXPLAIN` and `SHOW CREATE` code paths, including view expansion. The bypass now acts only as a fallback after the built-in SQL-layer object privilege check fails. If the SQL layer grants the static privilege, any auth-plugin static privilege check still applies normally; if the SQL layer denies and `PLAN_REPLAYER_EXPLAIN_ADMIN` rescues the request, the auth-plugin static privilege hook is not consulted, and enforcement happens through the dynamic-privilege plugin hook for `PLAN_REPLAYER_EXPLAIN_ADMIN`. Once the bypass retry is attempted, any later non-privilege failure is returned as-is instead of being rewritten back to the original privilege error.
+- Decision: Consume the bypass in planner privilege-check paths instead of hacking `pkg/privilege/privileges`.
+  Rationale: reviewer feedback requires keeping the privilege package generic. The session-scoped helper SQL marker still identifies the current internal helper SQL, but the actual bypass now happens where planner consumes current-user privilege checks: `CheckPrivilege(...)` for `visitInfo`-based checks and the direct nested-view / fast-path `pm.RequestVerification(...)` call sites. The planner-side helper follows the accepted helper-SQL semantics and dynamic privilege check, instead of re-encoding privilege-bit shapes. `visitInfo` generation remains intact so view-definer validation still sees the collected privilege shape.
   Date/Author: 2026-04-01 / Codex
 
 - Decision: Support file-input mode with the same task-wide allowlist as inline and statement-list inputs.
